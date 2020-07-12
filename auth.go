@@ -20,13 +20,16 @@ func (s *Server) handleAuth(w http.ResponseWriter, req *http.Request) {
 
 	sess, err := aesite.NewSession(ctx, s.dsClient, nil)
 	if err != nil {
-		// xxx
-	}
-	csrf, err := sess.CSRFToken()
-	if err != nil {
-		// xxx
+		http.Error(w, fmt.Sprintf("creating session: %s", err), http.StatusInternalServerError)
+		return
 	}
 	sess.SetCookie(w)
+
+	csrf, err := sess.CSRFToken()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("creating CSRF token: %s", err), http.StatusInternalServerError)
+		return
+	}
 
 	conf, err := s.oauthConf(ctx)
 	if err != nil {

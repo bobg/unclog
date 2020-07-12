@@ -89,7 +89,8 @@ func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) {
 		return nil
 	})
 	if err != nil {
-		// xxx
+		http.Error(w, fmt.Sprintf("locking user %s: %s", payload.Addr, err), http.StatusInternalServerError)
+		return
 	}
 	defer func() {
 		aesite.UpdateUser(ctx, s.dsClient, payload.Addr, &u, func(*datastore.Transaction) error {
