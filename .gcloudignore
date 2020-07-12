@@ -3,4 +3,5 @@
 .git
 creds.json
 oauth.json
+unclog
 *~

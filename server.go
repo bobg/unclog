@@ -16,7 +16,13 @@ type Server struct {
 }
 
 func NewServer(dsClient *datastore.Client) *Server {
-	return &Server{dsClient: dsClient}
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+	addr := ":" + port
+
+	return &Server{addr: addr, dsClient: dsClient}
 }
 
 func (s *Server) Serve(ctx context.Context) error {
