@@ -12,6 +12,8 @@ import (
 	"google.golang.org/api/option"
 )
 
+const pubsubTopic = "projects/unclog/topics/gmail"
+
 type user struct {
 	aesite.User
 

@@ -54,7 +54,7 @@ func init() {
 	if appengine.IsAppEngine() {
 		homeURL = &url.URL{
 			Scheme: "https",
-			Host:   "unclog.email", // xxx acquire domain
+			Host:   "unclog.appspot.com", // TODO: acquire a domain
 			Path:   "/",
 		}
 	} else {

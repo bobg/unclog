@@ -16,7 +16,7 @@ import (
 func cliServe(ctx context.Context, flagset *flag.FlagSet, args []string) error {
 	var (
 		creds     = flagset.String("creds", "", "credentials file")
-		projectID = flagset.String("project", "", "project ID")
+		projectID = flagset.String("project", "unclog", "project ID")
 		test      = flagset.Bool("test", false, "run in test mode")
 	)
 

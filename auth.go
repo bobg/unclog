@@ -15,8 +15,6 @@ import (
 	"google.golang.org/api/option"
 )
 
-const pubsubTopic = "xxx"
-
 func (s *Server) handleAuth(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
 
