@@ -40,6 +40,8 @@ func (s *Server) handleHome(w http.ResponseWriter, req *http.Request) {
 		} else if err != nil {
 			http.Error(w, fmt.Sprintf("getting session user: %s", err), http.StatusInternalServerError)
 			return
+		} else if u.Token == "" {
+			// ok
 		} else {
 			data.U = &u
 			data.Enabled = u.WatchExpiry.After(time.Now())

@@ -143,6 +143,12 @@ func (s *Server) handleAuth2(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
+	_, err = s.dsClient.Put(ctx, u.Key(), u)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("updating user: %s", err), http.StatusInternalServerError)
+		return
+	}
+
 	http.Redirect(w, req, "/", http.StatusSeeOther)
 }
 
