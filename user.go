@@ -105,7 +105,7 @@ func (s *Server) handleEnable(w http.ResponseWriter, req *http.Request) {
 	}
 	u.WatchExpiry = timeFromMillis(watchResp.Expiration)
 
-	_, err = s.dsClient.Put(ctx, u.Key(), u)
+	_, err = s.dsClient.Put(ctx, u.Key(), &u)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("storing updated user record: %s", err), http.StatusInternalServerError)
 		return
@@ -177,7 +177,7 @@ func (s *Server) handleDisable(w http.ResponseWriter, req *http.Request) {
 
 	u.WatchExpiry = time.Time{}
 
-	_, err = s.dsClient.Put(ctx, u.Key(), u)
+	_, err = s.dsClient.Put(ctx, u.Key(), &u)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("storing updated user record: %s", err), http.StatusInternalServerError)
 		return

@@ -186,7 +186,7 @@ func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) {
 			}
 			if threadTime.After(u.LastThreadTime) {
 				u.LastThreadTime = threadTime
-				_, err = s.dsClient.Put(ctx, u.Key(), u)
+				_, err = s.dsClient.Put(ctx, u.Key(), &u)
 				if err != nil {
 					return errors.Wrap(err, "storing last-thread time")
 				}
