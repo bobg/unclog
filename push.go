@@ -80,14 +80,13 @@ func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) {
 	var u user
 	err = aesite.UpdateUser(ctx, s.dsClient, payload.Addr, &u, func(*datastore.Transaction) error {
 		if u.LeaseExpiry.After(now) {
-			log.Printf("user %s is already being processed", payload.Addr)
-			return nil
+			return fmt.Errorf("lease will expire at %s", u.LeaseExpiry)
 		}
 		u.LeaseExpiry = deadline
 		return nil
 	})
 	if err != nil {
-		http.Error(w, fmt.Sprintf("locking user %s: %s", payload.Addr, err), http.StatusInternalServerError)
+		log.Printf("locking user %s: %s", payload.Addr, err)
 		return
 	}
 	defer func() {
