@@ -36,7 +36,7 @@ func (s *Server) handleAuth(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, fmt.Sprintf("getting OAuth config: %s", err), http.StatusInternalServerError)
 		return
 	}
-	url := conf.AuthCodeURL(csrf, oauth2.AccessTypeOffline)
+	url := conf.AuthCodeURL(csrf, oauth2.AccessTypeOffline, oauth2.ApprovalForce)
 	http.Redirect(w, req, url, http.StatusSeeOther)
 }
 
