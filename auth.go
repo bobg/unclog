@@ -118,14 +118,14 @@ func (s *Server) handleAuth2(w http.ResponseWriter, req *http.Request) {
 	}
 	u.Token = string(tokenJSON)
 
-	err = s.getOrCreateLabel(ctx, gmailSvc, "Contacts")
+	err = s.maybeCreateLabel(ctx, gmailSvc, "Contacts")
 	if err != nil {
-		http.Error(w, fmt.Sprintf("getting/creating Contacts label: %s", err), http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf("creating Contacts label: %s", err), http.StatusInternalServerError)
 		return
 	}
-	err = s.getOrCreateLabel(ctx, gmailSvc, "Contacts/Starred")
+	err = s.maybeCreateLabel(ctx, gmailSvc, "Contacts/Starred")
 	if err != nil {
-		http.Error(w, fmt.Sprintf("getting/creating Contacts/Starred label: %s", err), http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf("creating Contacts/Starred label: %s", err), http.StatusInternalServerError)
 		return
 	}
 
@@ -152,7 +152,7 @@ func (s *Server) handleAuth2(w http.ResponseWriter, req *http.Request) {
 	http.Redirect(w, req, "/", http.StatusSeeOther)
 }
 
-func (s *Server) getOrCreateLabel(ctx context.Context, gmailSvc *gmail.Service, name string) error {
+func (s *Server) maybeCreateLabel(ctx context.Context, gmailSvc *gmail.Service, name string) error {
 	label := &gmail.Label{
 		LabelListVisibility:   "labelShow",
 		MessageListVisibility: "show",
@@ -160,8 +160,14 @@ func (s *Server) getOrCreateLabel(ctx context.Context, gmailSvc *gmail.Service, 
 		Type:                  "user",
 	}
 	_, err := gmailSvc.Users.Labels.Create("me", label).Do()
-	if err != nil && !googleapi.IsNotModified(err) {
-		return err
+	if err == nil {
+		return nil
 	}
-	return nil
+	if g, ok := err.(*googleapi.Error); ok {
+		switch g.Code {
+		case http.StatusConflict, http.StatusNotModified:
+			return nil
+		}
+	}
+	return err
 }
