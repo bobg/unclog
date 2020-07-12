@@ -33,11 +33,11 @@ type pushPayload struct {
 
 func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) {
 	if !strings.EqualFold(req.Method, "POST") {
-		http.Error(w, fmt.Sprintf("method %s not allowed", req.Method), http.StatusMethodNotAllowed)
+		httpErr(w, http.StatusMethodNotAllowed, "method %s not allowed", req.Method)
 		return
 	}
 	if ct := req.Header.Get("Content-Type"); !strings.EqualFold(ct, "application/json") {
-		http.Error(w, fmt.Sprintf("content type %s not allowed", ct), http.StatusBadRequest)
+		httpErr(w, http.StatusBadRequest, "content type %s not allowed", ct)
 		return
 	}
 
@@ -45,20 +45,20 @@ func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) {
 	dec := json.NewDecoder(req.Body)
 	err := dec.Decode(&msg)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("could not JSON-decode request body: %s", err), http.StatusBadRequest)
+		httpErr(w, http.StatusBadRequest, "could not JSON-decode request body: %s", err)
 		return
 	}
 
 	decodedData, err := base64.StdEncoding.DecodeString(msg.Message.Data)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("could not base64-decode request payload: %s", err), http.StatusBadRequest)
+		httpErr(w, http.StatusBadRequest, "could not base64-decode request payload: %s", err)
 		return
 	}
 
 	var payload pushPayload
 	err = json.Unmarshal(decodedData, &payload)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("could not JSON-decode request payload: %s", err), http.StatusBadRequest)
+		httpErr(w, http.StatusBadRequest, "could not JSON-decode request payload: %s", err)
 		return
 	}
 
@@ -68,7 +68,7 @@ func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) {
 
 	oauthConf, err := s.oauthConf(ctx)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("configuring oauth: %s", err), http.StatusInternalServerError)
+		httpErr(w, http.StatusInternalServerError, "configuring oauth: %s", err)
 		return
 	}
 
@@ -97,14 +97,14 @@ func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) {
 	}()
 
 	if u.Token == "" {
-		http.Error(w, "oauth token required", http.StatusUnauthorized)
+		httpErr(w, http.StatusUnauthorized, "oauth token required")
 		// xxx cancel session?
 		return
 	}
 	var token oauth2.Token
 	err = json.Unmarshal([]byte(u.Token), &token)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("could not decode oauth token: %s", err), http.StatusInternalServerError)
+		httpErr(w, http.StatusInternalServerError, "could not decode oauth token: %s", err)
 		return
 	}
 
@@ -114,7 +114,7 @@ func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) {
 
 	peopleSvc, err := people.NewService(ctx, option.WithHTTPClient(oauthClient))
 	if err != nil {
-		http.Error(w, fmt.Sprintf("allocating people service: %s", err), http.StatusInternalServerError)
+		httpErr(w, http.StatusInternalServerError, "allocating people service: %s", err)
 		return
 	}
 	peopleConnSvc := people.NewPeopleConnectionsService(peopleSvc)
@@ -146,13 +146,13 @@ func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) {
 		return nil
 	})
 	if err != nil {
-		http.Error(w, fmt.Sprintf("listing connections: %s", err), http.StatusInternalServerError)
+		httpErr(w, http.StatusInternalServerError, "listing connections: %s", err)
 		return
 	}
 
 	gmailSvc, err := gmail.NewService(ctx, option.WithHTTPClient(oauthClient))
 	if err != nil {
-		http.Error(w, fmt.Sprintf("allocating gmail service: %s", err), http.StatusInternalServerError)
+		httpErr(w, http.StatusInternalServerError, "allocating gmail service: %s", err)
 		return
 	}
 
@@ -183,7 +183,7 @@ func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) {
 		return nil
 	})
 	if err != nil {
-		http.Error(w, fmt.Sprintf("processing latest threads: %s", err), http.StatusInternalServerError)
+		httpErr(w, http.StatusInternalServerError, "processing latest threads: %s", err)
 		return
 	}
 
@@ -258,4 +258,10 @@ func addrIn(addr string, persons []*people.Person) bool {
 		}
 	}
 	return false
+}
+
+func httpErr(w http.ResponseWriter, code int, msgfmt string, args ...interface{}) {
+	msg := fmt.Sprintf(msgfmt, args...)
+	http.Error(w, msg, code)
+	log.Printf("HTTP error %d: %s", code, msg)
 }
