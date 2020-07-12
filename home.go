@@ -78,12 +78,12 @@ const home = `
     {{ if .U }}
       {{ if .Enabled }}
         <form method="POST" action="/disable">
-          <input type="hidden" value="{{ .Csrf }}">
+          <input type="hidden" name="csrf" value="{{ .Csrf }}">
           <button type="submit">Disable</button>
         </form>
       {{ else }}
         <form method="POST" action="/enable">
-          <input type="hidden" value="{{ .Csrf }}">
+          <input type="hidden" name="csrf" value="{{ .Csrf }}">
           <button type="submit">Enable</button>
         </form>
       {{ end }}

@@ -15,14 +15,11 @@ import (
 	"github.com/bobg/aesite"
 	"github.com/pkg/errors"
 	"golang.org/x/oauth2"
-	"golang.org/x/time/rate"
 	"google.golang.org/api/gmail/v1"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 	"google.golang.org/api/people/v1"
 )
-
-const rateLimit = 250 * time.Millisecond
 
 type pushMessage struct {
 	Message struct {
@@ -83,7 +80,8 @@ func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) {
 	var u user
 	err = aesite.UpdateUser(ctx, s.dsClient, payload.Addr, &u, func(*datastore.Transaction) error {
 		if u.LeaseExpiry.After(now) {
-			return errors.New("user is already being processed")
+			log.Printf("user %s is already being processed", payload.Addr)
+			return nil
 		}
 		u.LeaseExpiry = deadline
 		return nil
@@ -112,15 +110,6 @@ func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) {
 	}
 
 	oauthClient := oauthConf.Client(ctx, &token)
-	limiter := rate.NewLimiter(rate.Every(rateLimit), 1)
-	origTransport := oauthClient.Transport
-	if origTransport == nil {
-		origTransport = http.DefaultTransport
-	}
-	oauthClient.Transport = &throttledRT{
-		rt: origTransport,
-		l:  limiter,
-	}
 
 	var starred, unstarred []*people.Person
 
@@ -218,6 +207,9 @@ func handleThread(ctx context.Context, gmailSvc *gmail.Service, u *user, threadI
 			threadTime = msgTime
 		}
 		if starredAddr != "" {
+			// No need to keep looking for addresses,
+			// but do keep iterating over messages
+			// to get an accurate value for threadTime.
 			continue
 		}
 		for _, header := range msg.Payload.Headers {
@@ -248,14 +240,12 @@ func handleThread(ctx context.Context, gmailSvc *gmail.Service, u *user, threadI
 			AddLabelIds:    []string{u.ContactsLabelID},
 			RemoveLabelIds: []string{u.StarredLabelID},
 		}
-	} else {
-		req = &gmail.ModifyThreadRequest{
-			RemoveLabelIds: []string{u.StarredLabelID, u.ContactsLabelID},
-		}
 	}
-	_, err = gmailSvc.Users.Threads.Modify("me", threadID, req).Do()
-	if err != nil && !googleapi.IsNotModified(err) {
-		return time.Time{}, errors.Wrap(err, "updating thread")
+	if req != nil {
+		_, err = gmailSvc.Users.Threads.Modify("me", threadID, req).Do()
+		if err != nil && !googleapi.IsNotModified(err) {
+			return time.Time{}, errors.Wrap(err, "updating thread")
+		}
 	}
 	return threadTime, nil
 }
@@ -269,17 +259,4 @@ func addrIn(addr string, persons []*people.Person) bool {
 		}
 	}
 	return false
-}
-
-type throttledRT struct {
-	rt http.RoundTripper
-	l  *rate.Limiter
-}
-
-func (t throttledRT) RoundTrip(req *http.Request) (*http.Response, error) {
-	err := t.l.Wait(req.Context())
-	if err != nil {
-		return nil, errors.Wrap(err, "while throttled")
-	}
-	return t.rt.RoundTrip(req)
 }
