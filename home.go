@@ -11,9 +11,9 @@ import (
 )
 
 type homedata struct {
-	u       *user
-	enabled bool
-	csrf    string
+	U       *user
+	Enabled bool
+	Csrf    string
 }
 
 func (s *Server) handleHome(w http.ResponseWriter, req *http.Request) {
@@ -41,8 +41,8 @@ func (s *Server) handleHome(w http.ResponseWriter, req *http.Request) {
 			http.Error(w, fmt.Sprintf("getting session user: %s", err), http.StatusInternalServerError)
 			return
 		} else {
-			data.u = &u
-			data.enabled = u.WatchExpiry.After(time.Now())
+			data.U = &u
+			data.Enabled = u.WatchExpiry.After(time.Now())
 		}
 	}
 
@@ -51,7 +51,7 @@ func (s *Server) handleHome(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, fmt.Sprintf("creating CSRF token: %s", err), http.StatusInternalServerError)
 		return
 	}
-	data.csrf = csrf
+	data.Csrf = csrf
 
 	tmpl, err := template.New("").Parse(home)
 	if err != nil {
@@ -73,15 +73,15 @@ const home = `
   </head>
   <body>
     <h1>Unclog - U Need Contact Labeling On Gmail</h1>
-    {{ if .u }}
-      {{ if .enabled }}
+    {{ if .U }}
+      {{ if .Enabled }}
         <form method="POST" action="/disable">
-          <input type="hidden" value="{{ .csrf }}">
+          <input type="hidden" value="{{ .Csrf }}">
           <button type="submit">Disable</button>
         </form>
       {{ else }}
         <form method="POST" action="/enable">
-          <input type="hidden" value="{{ .csrf }}">
+          <input type="hidden" value="{{ .Csrf }}">
           <button type="submit">Enable</button>
         </form>
       {{ end }}
