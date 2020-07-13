@@ -12,6 +12,7 @@ import (
 
 type homedata struct {
 	U       *user
+	Email   string
 	Enabled bool
 	Csrf    string
 }
@@ -72,28 +73,39 @@ const home = `
 <html>
   <head>
     <title>Unclog</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
   </head>
   <body>
     <h1>Unclog - U Need Contact Labeling On Gmail</h1>
     {{ if .U }}
       {{ if .Enabled }}
+        <p>
+          Unclog is presently enabled for {{ .Email }}.
+        </p>
         <form method="POST" action="/disable">
-          <input type="hidden" name="csrf" value="{{ .Csrf }}">
-          <button type="submit">Disable</button>
+          <p>
+            Press to disable Unclog.
+            <input type="hidden" name="csrf" value="{{ .Csrf }}">
+            <button type="submit">Disable</button>
+          </p>
         </form>
       {{ else }}
-        <form method="POST" action="/enable">
-          <input type="hidden" name="csrf" value="{{ .Csrf }}">
-          <button type="submit">Enable</button>
-        </form>
+        <p>
+          Unclog is presently disabled for {{ .U.Email }}.
+        </p>
+				<form method="POST" action="/enable">
+          <p>
+						Press to enable Unclog.
+						<input type="hidden" name="csrf" value="{{ .Csrf }}">
+						<button type="submit">Enable</button>
+          </p>
+				</form>
       {{ end }}
     {{ else }}
       <form method="POST" action="/auth">
 				<p>
-					Press here to get started.
+					Press to get started.
 					You will be asked to grant permissions to Unclog.
-				</p>
-				<p>
 					<button type="submit">Go</button>
 				</p>
       </form>
