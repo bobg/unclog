@@ -80,7 +80,7 @@ const home = `
     {{ if .U }}
       {{ if .Enabled }}
         <p>
-          Unclog is presently enabled for {{ .Email }}.
+          Unclog is presently enabled for {{ .U.Email }}.
         </p>
         <form method="POST" action="/disable">
           <p>

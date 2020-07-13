@@ -1,19 +1,26 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"net/http"
 
 	"cloud.google.com/go/datastore"
 	"github.com/bobg/aesite"
 	"github.com/pkg/errors"
 	"google.golang.org/api/option"
+
+	"github.com/bobg/unclog"
 )
 
 var adminCommands = map[string]func(context.Context, *flag.FlagSet, []string) error{
-	"get": cliAdminGet,
-	"set": cliAdminSet,
+	"get":  cliAdminGet,
+	"set":  cliAdminSet,
+	"kick": cliAdminKick,
 }
 
 func cliAdmin(ctx context.Context, flagset *flag.FlagSet, args []string) error {
@@ -118,4 +125,43 @@ func cliAdminSet(ctx context.Context, flagset *flag.FlagSet, args []string) erro
 	}
 
 	return aesite.SetSetting(ctx, dsClient, flagset.Arg(0), []byte(flagset.Arg(1)))
+}
+
+func cliAdminKick(ctx context.Context, flagset *flag.FlagSet, args []string) error {
+	var (
+		addr = flagset.String("addr", "", "Gmail address (required)")
+		date = flagset.String("date", "", "process threads with this date (YYYY-MM-DD, optional)")
+	)
+
+	err := flagset.Parse(args)
+	if err != nil {
+		return err
+	}
+
+	if *addr == "" {
+		return errors.New("-addr is required")
+	}
+
+	payload := unclog.PushPayload{Addr: *addr}
+	jsonPayload, err := json.Marshal(payload)
+	if err != nil {
+		return errors.Wrap(err, "JSON-marshaling payload")
+	}
+	base64Payload := base64.StdEncoding.EncodeToString(jsonPayload)
+
+	msg := unclog.PushMessage{Date: *date}
+	msg.Message.Data = base64Payload
+
+	jsonMsg, err := json.Marshal(msg)
+	if err != nil {
+		return errors.Wrap(err, "JSON-marshaling message")
+	}
+
+	resp, err := http.Post("https://unclog.appspot.com/push", "application/json", bytes.NewReader(jsonMsg))
+	if err != nil {
+		return errors.Wrap(err, "posting to /push URL")
+	}
+	resp.Body.Close()
+
+	return nil
 }

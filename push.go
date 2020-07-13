@@ -21,13 +21,14 @@ import (
 	"google.golang.org/api/people/v1"
 )
 
-type pushMessage struct {
+type PushMessage struct {
 	Message struct {
 		Data string `json:"data"`
 	} `json:"message"`
+	Date string `json:"date,omitempty"`
 }
 
-type pushPayload struct {
+type PushPayload struct {
 	Addr string `json:"emailAddress"`
 }
 
@@ -41,7 +42,7 @@ func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	var msg pushMessage
+	var msg PushMessage
 	dec := json.NewDecoder(req.Body)
 	err := dec.Decode(&msg)
 	if err != nil {
@@ -55,7 +56,7 @@ func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	var payload pushPayload
+	var payload PushPayload
 	err = json.Unmarshal(decodedData, &payload)
 	if err != nil {
 		httpErr(w, http.StatusBadRequest, "could not JSON-decode request payload: %s", err)
@@ -156,16 +157,30 @@ func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	oneWeekAgo := now.Add(-7 * 24 * time.Hour)
-	startTime := u.LastThreadTime
-	if startTime.Before(oneWeekAgo) {
-		startTime = oneWeekAgo
+	var query string
+	if u.InboxOnly {
+		query = "in:inbox"
+	} else {
+		query = "-in:chats"
+	}
+	if msg.Date != "" {
+		d, err := ParseDate(msg.Date)
+		if err != nil {
+			httpErr(w, http.StatusInternalServerError, "parsing date %s", msg.Date)
+			return
+		}
+		query += fmt.Sprintf(" after:%d/%02d/%02d", d.Y, d.M, d.D)
+		d = nextDate(d)
+		query += fmt.Sprintf(" before:%d/%02d/%02d", d.Y, d.M, d.D)
+	} else {
+		oneWeekAgo := now.Add(-7 * 24 * time.Hour)
+		startTime := u.LastThreadTime
+		if startTime.Before(oneWeekAgo) {
+			startTime = oneWeekAgo
+		}
+		query += fmt.Sprintf(" after:%d", startTime.Unix()-2) // a little overlap, so nothing gets missed
 	}
 
-	query := fmt.Sprintf("after:%d -in:chats", startTime.Unix()-2) // a little overlap, so nothing gets missed
-	if u.InboxOnly {
-		query += " in:inbox"
-	}
 	err = gmailSvc.Users.Threads.List("me").Q(query).Pages(ctx, func(resp *gmail.ListThreadsResponse) error {
 		for _, thread := range resp.Threads {
 			threadTime, err := handleThread(ctx, gmailSvc, &u, thread.Id, starred, unstarred)
