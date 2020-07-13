@@ -2,17 +2,24 @@ package unclog
 
 import (
 	"context"
+	"expvar"
 	"net/http"
 	"net/url"
 	"os"
 
 	"cloud.google.com/go/datastore"
+	"github.com/bobg/mid"
 	"google.golang.org/appengine"
 )
 
 type Server struct {
 	addr     string
 	dsClient *datastore.Client
+
+	pushCalls      *expvar.Int
+	pushCollisions *expvar.Int
+	pushErrs       *expvar.Int
+	pushCumSecs    *expvar.Float
 }
 
 func NewServer(dsClient *datastore.Client) *Server {
@@ -22,7 +29,14 @@ func NewServer(dsClient *datastore.Client) *Server {
 	}
 	addr := ":" + port
 
-	return &Server{addr: addr, dsClient: dsClient}
+	return &Server{
+		addr:           addr,
+		dsClient:       dsClient,
+		pushCalls:      expvar.NewInt("pushcalls"),
+		pushCollisions: expvar.NewInt("pushcollisions"),
+		pushErrs:       expvar.NewInt("pusherrs"),
+		pushCumSecs:    expvar.NewFloat("pushcumsecs"),
+	}
 }
 
 func (s *Server) Serve(ctx context.Context) error {
@@ -30,9 +44,10 @@ func (s *Server) Serve(ctx context.Context) error {
 	mux.HandleFunc("/", s.handleHome)
 	mux.HandleFunc("/auth", s.handleAuth)
 	mux.HandleFunc("/auth2", s.handleAuth2)
-	mux.HandleFunc("/push", s.handlePush)
 	mux.HandleFunc("/enable", s.handleEnable)
 	mux.HandleFunc("/disable", s.handleDisable)
+	mux.Handle("/push", mid.Err(s.handlePush))
+	mux.Handle("/vars", expvar.Handler())
 
 	httpSrv := &http.Server{
 		Addr:    s.addr,

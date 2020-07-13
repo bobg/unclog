@@ -13,6 +13,7 @@ import (
 
 	"cloud.google.com/go/datastore"
 	"github.com/bobg/aesite"
+	"github.com/bobg/mid"
 	"github.com/pkg/errors"
 	"golang.org/x/oauth2"
 	"google.golang.org/api/gmail/v1"
@@ -32,35 +33,41 @@ type PushPayload struct {
 	Addr string `json:"emailAddress"`
 }
 
-func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) {
+func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) (err error) {
+	s.pushCalls.Add(1)
+	begin := time.Now()
+	defer func() {
+		elapsed := time.Since(begin)
+		if err != nil {
+			s.pushErrs.Add(1)
+		} else {
+			s.pushCumSecs.Add(float64(elapsed) / float64(time.Second))
+		}
+	}()
+
 	if !strings.EqualFold(req.Method, "POST") {
-		httpErr(w, http.StatusMethodNotAllowed, "method %s not allowed", req.Method)
-		return
+		return mid.CodeErr{C: http.StatusMethodNotAllowed}
 	}
 	if ct := req.Header.Get("Content-Type"); !strings.EqualFold(ct, "application/json") {
-		httpErr(w, http.StatusBadRequest, "content type %s not allowed", ct)
-		return
+		return mid.CodeErr{C: http.StatusBadRequest, Err: fmt.Errorf("content type %s not allowed", ct)}
 	}
 
 	var msg PushMessage
 	dec := json.NewDecoder(req.Body)
-	err := dec.Decode(&msg)
+	err = dec.Decode(&msg)
 	if err != nil {
-		httpErr(w, http.StatusBadRequest, "could not JSON-decode request body: %s", err)
-		return
+		return mid.CodeErr{C: http.StatusBadRequest, Err: errors.Wrap(err, "JSON-decoding request body")}
 	}
 
 	decodedData, err := base64.StdEncoding.DecodeString(msg.Message.Data)
 	if err != nil {
-		httpErr(w, http.StatusBadRequest, "could not base64-decode request payload: %s", err)
-		return
+		return mid.CodeErr{C: http.StatusBadRequest, Err: errors.Wrap(err, "base64-decoding request payload")}
 	}
 
 	var payload PushPayload
 	err = json.Unmarshal(decodedData, &payload)
 	if err != nil {
-		httpErr(w, http.StatusBadRequest, "could not JSON-decode request payload: %s", err)
-		return
+		return mid.CodeErr{C: http.StatusBadRequest, Err: errors.Wrap(err, "JSON-decoding request payload")}
 	}
 
 	log.Printf("got push for %s", payload.Addr)
@@ -69,8 +76,7 @@ func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) {
 
 	oauthConf, err := s.oauthConf(ctx)
 	if err != nil {
-		httpErr(w, http.StatusInternalServerError, "configuring oauth: %s", err)
-		return
+		return errors.Wrap(err, "configuring oauth")
 	}
 
 	now := time.Now()
@@ -87,8 +93,9 @@ func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) {
 		return nil
 	})
 	if err != nil {
+		s.pushCollisions.Add(1)
 		log.Printf("locking user %s: %s", payload.Addr, err)
-		return
+		return nil
 	}
 	defer func() {
 		aesite.UpdateUser(ctx, s.dsClient, payload.Addr, &u, func(*datastore.Transaction) error {
@@ -98,15 +105,13 @@ func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) {
 	}()
 
 	if u.Token == "" {
-		httpErr(w, http.StatusUnauthorized, "oauth token required")
 		// xxx cancel session?
-		return
+		return mid.CodeErr{C: http.StatusUnauthorized}
 	}
 	var token oauth2.Token
 	err = json.Unmarshal([]byte(u.Token), &token)
 	if err != nil {
-		httpErr(w, http.StatusInternalServerError, "could not decode oauth token: %s", err)
-		return
+		return errors.Wrap(err, "decoding oauth token")
 	}
 
 	oauthClient := oauthConf.Client(ctx, &token)
@@ -115,8 +120,7 @@ func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) {
 
 	peopleSvc, err := people.NewService(ctx, option.WithHTTPClient(oauthClient))
 	if err != nil {
-		httpErr(w, http.StatusInternalServerError, "allocating people service: %s", err)
-		return
+		return errors.Wrap(err, "allocating people service")
 	}
 	peopleConnSvc := people.NewPeopleConnectionsService(peopleSvc)
 	err = peopleConnSvc.List("people/me").PersonFields("emailAddresses,names,memberships").Pages(ctx, func(resp *people.ListConnectionsResponse) error {
@@ -147,14 +151,12 @@ func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) {
 		return nil
 	})
 	if err != nil {
-		httpErr(w, http.StatusInternalServerError, "listing connections: %s", err)
-		return
+		return errors.Wrap(err, "listing connections")
 	}
 
 	gmailSvc, err := gmail.NewService(ctx, option.WithHTTPClient(oauthClient))
 	if err != nil {
-		httpErr(w, http.StatusInternalServerError, "allocating gmail service: %s", err)
-		return
+		return errors.Wrap(err, "allocating gmail service")
 	}
 
 	var query string
@@ -166,8 +168,7 @@ func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) {
 	if msg.Date != "" {
 		d, err := ParseDate(msg.Date)
 		if err != nil {
-			httpErr(w, http.StatusInternalServerError, "parsing date %s", msg.Date)
-			return
+			return errors.Wrap(err, "parsing date")
 		}
 		query += fmt.Sprintf(" after:%d/%02d/%02d", d.Y, d.M, d.D)
 		d = nextDate(d)
@@ -197,12 +198,8 @@ func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) {
 		}
 		return nil
 	})
-	if err != nil {
-		httpErr(w, http.StatusInternalServerError, "processing latest threads: %s", err)
-		return
-	}
 
-	w.WriteHeader(http.StatusNoContent)
+	return errors.Wrap(err, "processing latest threads")
 }
 
 func handleThread(ctx context.Context, gmailSvc *gmail.Service, u *user, threadID string, starred, unstarred []*people.Person) (time.Time, error) {
@@ -273,10 +270,4 @@ func addrIn(addr string, persons []*people.Person) bool {
 		}
 	}
 	return false
-}
-
-func httpErr(w http.ResponseWriter, code int, msgfmt string, args ...interface{}) {
-	msg := fmt.Sprintf(msgfmt, args...)
-	http.Error(w, msg, code)
-	log.Printf("HTTP error %d: %s", code, msg)
 }
