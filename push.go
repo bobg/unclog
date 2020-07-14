@@ -116,42 +116,50 @@ func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) (err error
 
 	oauthClient := oauthConf.Client(ctx, &token)
 
-	var starred, unstarred []*people.Person
+	if u.AddrCacheExpiry.Before(now) {
+		u.StarredAddrs = nil
+		u.UnstarredAddrs = nil
+		u.AddrCacheExpiry = now.Add(5 * time.Minute)
 
-	peopleSvc, err := people.NewService(ctx, option.WithHTTPClient(oauthClient))
-	if err != nil {
-		return errors.Wrap(err, "allocating people service")
-	}
-	peopleConnSvc := people.NewPeopleConnectionsService(peopleSvc)
-	err = peopleConnSvc.List("people/me").PersonFields("emailAddresses,names,memberships").Pages(ctx, func(resp *people.ListConnectionsResponse) error {
-		for _, person := range resp.Connections {
-			var anyAddrs bool
-			for _, a := range person.EmailAddresses {
-				if a.Value != "" {
-					anyAddrs = true
-					break
-				}
-			}
-			if !anyAddrs {
-				continue
-			}
-			var isStarred bool
-			for _, m := range person.Memberships {
-				if m.ContactGroupMembership != nil && m.ContactGroupMembership.ContactGroupId == "starred" {
-					isStarred = true
-					break
-				}
-			}
-			if isStarred {
-				starred = append(starred, person)
-			} else {
-				unstarred = append(unstarred, person)
-			}
+		peopleSvc, err := people.NewService(ctx, option.WithHTTPClient(oauthClient))
+		if err != nil {
+			return errors.Wrap(err, "allocating people service")
 		}
-		return nil
-	})
-	if err != nil {
-		return errors.Wrap(err, "listing connections")
+		peopleConnSvc := people.NewPeopleConnectionsService(peopleSvc)
+		err = peopleConnSvc.List("people/me").PersonFields("emailAddresses,names,memberships").Pages(ctx, func(resp *people.ListConnectionsResponse) error {
+			for _, person := range resp.Connections {
+				var addrs []string
+				for _, a := range person.EmailAddresses {
+					if a.Value != "" {
+						addrs = append(addrs, a.Value)
+					}
+				}
+				if len(addrs) == 0 {
+					continue
+				}
+				var isStarred bool
+				for _, m := range person.Memberships {
+					if m.ContactGroupMembership != nil && m.ContactGroupMembership.ContactGroupId == "starred" {
+						isStarred = true
+						break
+					}
+				}
+				if isStarred {
+					u.StarredAddrs = append(u.StarredAddrs, addrs...)
+				} else {
+					u.UnstarredAddrs = append(u.UnstarredAddrs, addrs...)
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return errors.Wrap(err, "listing connections")
+		}
+
+		_, err = s.dsClient.Put(ctx, u.Key(), &u)
+		if err != nil {
+			return errors.Wrap(err, "storing updated user")
+		}
 	}
 
 	gmailSvc, err := gmail.NewService(ctx, option.WithHTTPClient(oauthClient))
@@ -184,7 +192,7 @@ func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) (err error
 
 	err = gmailSvc.Users.Threads.List("me").Q(query).Pages(ctx, func(resp *gmail.ListThreadsResponse) error {
 		for _, thread := range resp.Threads {
-			threadTime, err := handleThread(ctx, gmailSvc, &u, thread.Id, starred, unstarred)
+			threadTime, err := handleThread(ctx, gmailSvc, &u, thread.Id)
 			if err != nil {
 				return errors.Wrapf(err, "handling thread %s", thread.Id)
 			}
@@ -202,7 +210,7 @@ func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) (err error
 	return errors.Wrap(err, "processing latest threads")
 }
 
-func handleThread(ctx context.Context, gmailSvc *gmail.Service, u *user, threadID string, starred, unstarred []*people.Person) (time.Time, error) {
+func handleThread(ctx context.Context, gmailSvc *gmail.Service, u *user, threadID string) (time.Time, error) {
 	thread, err := gmailSvc.Users.Threads.Get("me", threadID).Format("metadata").MetadataHeaders("from").Do()
 	if err != nil {
 		return time.Time{}, errors.Wrap(err, "getting thread members")
@@ -232,9 +240,9 @@ func handleThread(ctx context.Context, gmailSvc *gmail.Service, u *user, threadI
 				log.Printf("skipping message with unparseable From address %s: %s", header.Value, err)
 				continue
 			}
-			if addrIn(parsed.Address, starred) {
+			if addrIn(parsed.Address, u.StarredAddrs) {
 				starredAddr = parsed.Address
-			} else if addrIn(parsed.Address, unstarred) {
+			} else if addrIn(parsed.Address, u.UnstarredAddrs) {
 				contactAddr = parsed.Address
 			}
 			break
@@ -261,12 +269,10 @@ func handleThread(ctx context.Context, gmailSvc *gmail.Service, u *user, threadI
 	return threadTime, nil
 }
 
-func addrIn(addr string, persons []*people.Person) bool {
-	for _, person := range persons {
-		for _, personAddr := range person.EmailAddresses {
-			if strings.EqualFold(addr, personAddr.Value) {
-				return true
-			}
+func addrIn(addr string, addrs []string) bool {
+	for _, a := range addrs {
+		if strings.EqualFold(addr, a) {
+			return true
 		}
 	}
 	return false

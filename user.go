@@ -26,10 +26,26 @@ type user struct {
 	// LeaseExpiry is the time when this user will be available to handle a push request.
 	LeaseExpiry time.Time
 
-	InboxOnly      bool
+	// InboxOnly tells whether to consider only inbox threads when labeling.
+	InboxOnly bool
+
+	// LastThreadTime is the latest last-modified time of all processed threads.
 	LastThreadTime time.Time
-	WatchExpiry    time.Time
-	Token          string
+
+	// WatchExpiry is the time at which the gmail push-notice subscription expires.
+	WatchExpiry time.Time
+
+	// Token is the user's OAuth token.
+	Token string
+
+	// StarredAddrs is a cache of the user's starred contacts' e-mail addresses.
+	StarredAddrs []string
+
+	// UnstarredAddrs is a cache of the user's unstarred contacts' e-mail addresses.
+	UnstarredAddrs []string
+
+	// AddrCacheExpiry is the time at which the cached values in StarredAddrs and UnstarredAddrs expire.
+	AddrCacheExpiry time.Time
 }
 
 func (u *user) GetUser() *aesite.User {
