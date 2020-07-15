@@ -12,6 +12,11 @@ import (
 )
 
 func (s *Server) handleRenew(w http.ResponseWriter, req *http.Request) error {
+	err := s.checkCron(req)
+	if err != nil {
+		return err
+	}
+
 	ctx := req.Context()
 
 	var (

@@ -3,8 +3,8 @@ package unclog
 import (
 	"context"
 	"net/http"
-	"net/url"
 	"os"
+	"strings"
 
 	"cloud.google.com/go/datastore"
 	"github.com/bobg/mid"
@@ -62,24 +62,13 @@ func (s *Server) Serve(ctx context.Context) error {
 	return err
 }
 
-var homeURL *url.URL
-
-func init() {
-	if appengine.IsAppEngine() {
-		homeURL = &url.URL{
-			Scheme: "https",
-			Host:   "unclog.appspot.com", // TODO: acquire a domain
-			Path:   "/",
-		}
-	} else {
-		port := os.Getenv("PORT")
-		if port == "" {
-			port = "8080"
-		}
-		homeURL = &url.URL{
-			Scheme: "http",
-			Host:   "localhost:" + port,
-			Path:   "/",
-		}
+func (s *Server) checkCron(req *http.Request) error {
+	if !appengine.IsAppEngine() {
+		return nil
 	}
+	h := strings.TrimSpace(req.Header.Get("X-Appengine-Cron"))
+	if h != "true" {
+		return mid.CodeErr{C: http.StatusUnauthorized}
+	}
+	return nil
 }
