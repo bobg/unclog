@@ -3,4 +3,4 @@ test:
 	./unclog serve -test
 
 deploy:
-	gcloud app deploy --project unclog app.yaml
+	gcloud app deploy --project unclog app.yaml cron.yaml

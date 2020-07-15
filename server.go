@@ -2,24 +2,20 @@ package unclog
 
 import (
 	"context"
-	"expvar"
 	"net/http"
 	"net/url"
 	"os"
 
 	"cloud.google.com/go/datastore"
 	"github.com/bobg/mid"
+	"golang.org/x/oauth2"
 	"google.golang.org/appengine"
 )
 
 type Server struct {
-	addr     string
-	dsClient *datastore.Client
-
-	pushCalls      *expvar.Int
-	pushCollisions *expvar.Int
-	pushErrs       *expvar.Int
-	pushCumSecs    *expvar.Float
+	addr      string
+	dsClient  *datastore.Client
+	oauthConf *oauth2.Config
 }
 
 func NewServer(dsClient *datastore.Client) *Server {
@@ -30,24 +26,21 @@ func NewServer(dsClient *datastore.Client) *Server {
 	addr := ":" + port
 
 	return &Server{
-		addr:           addr,
-		dsClient:       dsClient,
-		pushCalls:      expvar.NewInt("pushcalls"),
-		pushCollisions: expvar.NewInt("pushcollisions"),
-		pushErrs:       expvar.NewInt("pusherrs"),
-		pushCumSecs:    expvar.NewFloat("pushcumsecs"),
+		addr:     addr,
+		dsClient: dsClient,
 	}
 }
 
 func (s *Server) Serve(ctx context.Context) error {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", s.handleHome)
-	mux.HandleFunc("/auth", s.handleAuth)
-	mux.HandleFunc("/auth2", s.handleAuth2)
-	mux.HandleFunc("/enable", s.handleEnable)
-	mux.HandleFunc("/disable", s.handleDisable)
+	mux.Handle("/", mid.Err(s.handleHome))
+	mux.Handle("/auth", mid.Err(s.handleAuth))
+	mux.Handle("/auth2", mid.Err(s.handleAuth2))
+	mux.Handle("/enable", mid.Err(s.handleEnable))
+	mux.Handle("/disable", mid.Err(s.handleDisable))
 	mux.Handle("/push", mid.Err(s.handlePush))
-	mux.Handle("/vars", expvar.Handler())
+
+	mux.Handle("/t/renew", mid.Log(mid.Err(s.handleRenew)))
 
 	httpSrv := &http.Server{
 		Addr:    s.addr,

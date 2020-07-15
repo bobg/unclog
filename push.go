@@ -15,7 +15,6 @@ import (
 	"github.com/bobg/aesite"
 	"github.com/bobg/mid"
 	"github.com/pkg/errors"
-	"golang.org/x/oauth2"
 	"google.golang.org/api/gmail/v1"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
@@ -34,17 +33,6 @@ type PushPayload struct {
 }
 
 func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) (err error) {
-	s.pushCalls.Add(1)
-	begin := time.Now()
-	defer func() {
-		elapsed := time.Since(begin)
-		if err != nil {
-			s.pushErrs.Add(1)
-		} else {
-			s.pushCumSecs.Add(float64(elapsed) / float64(time.Second))
-		}
-	}()
-
 	if !strings.EqualFold(req.Method, "POST") {
 		return mid.CodeErr{C: http.StatusMethodNotAllowed}
 	}
@@ -74,11 +62,6 @@ func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) (err error
 
 	ctx := req.Context()
 
-	oauthConf, err := s.oauthConf(ctx)
-	if err != nil {
-		return errors.Wrap(err, "configuring oauth")
-	}
-
 	now := time.Now()
 	deadline := now.Add(time.Minute)
 	ctx, cancel := context.WithDeadline(ctx, deadline)
@@ -93,7 +76,6 @@ func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) (err error
 		return nil
 	})
 	if err != nil {
-		s.pushCollisions.Add(1)
 		log.Printf("locking user %s: %s", payload.Addr, err)
 		return nil
 	}
@@ -104,17 +86,10 @@ func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) (err error
 		})
 	}()
 
-	if u.Token == "" {
-		// xxx cancel session?
-		return mid.CodeErr{C: http.StatusUnauthorized}
-	}
-	var token oauth2.Token
-	err = json.Unmarshal([]byte(u.Token), &token)
+	oauthClient, err := s.oauthClient(ctx, &u) // xxx check for errNoToken
 	if err != nil {
-		return errors.Wrap(err, "decoding oauth token")
+		return errors.Wrap(err, "getting oauth client")
 	}
-
-	oauthClient := oauthConf.Client(ctx, &token)
 
 	var starred, unstarred []*people.Person
 

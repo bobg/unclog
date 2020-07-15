@@ -1,0 +1,4 @@
+cron:
+- description: "watch renewer"
+  url: /t/renew
+  schedule: every 1 hour

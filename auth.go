@@ -3,45 +3,46 @@ package unclog
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
+	stderrs "errors"
 	"net/http"
 
 	"cloud.google.com/go/datastore"
 	"github.com/bobg/aesite"
+	"github.com/bobg/mid"
+	"github.com/pkg/errors"
 	"golang.org/x/oauth2"
 	"google.golang.org/api/gmail/v1"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 )
 
-func (s *Server) handleAuth(w http.ResponseWriter, req *http.Request) {
+func (s *Server) handleAuth(w http.ResponseWriter, req *http.Request) error {
 	ctx := req.Context()
 
 	sess, err := aesite.NewSession(ctx, s.dsClient, nil)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("creating session: %s", err), http.StatusInternalServerError)
-		return
+		return errors.Wrap(err, "creating session")
 	}
 	sess.SetCookie(w)
 
 	csrf, err := sess.CSRFToken()
 	if err != nil {
-		http.Error(w, fmt.Sprintf("creating CSRF token: %s", err), http.StatusInternalServerError)
-		return
+		return errors.Wrap(err, "creating CSRF token")
 	}
 
-	conf, err := s.oauthConf(ctx)
+	conf, err := s.getOauthConf(ctx)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("getting OAuth config: %s", err), http.StatusInternalServerError)
-		return
+		return errors.Wrap(err, "getting OAuth config")
 	}
+
 	url := conf.AuthCodeURL(csrf, oauth2.AccessTypeOffline, oauth2.ApprovalForce)
 	http.Redirect(w, req, url, http.StatusSeeOther)
+
+	return nil
 }
 
 // This is where the OAuth flow redirects to.
-func (s *Server) handleAuth2(w http.ResponseWriter, req *http.Request) {
+func (s *Server) handleAuth2(w http.ResponseWriter, req *http.Request) error {
 	var (
 		ctx   = req.Context()
 		code  = req.FormValue("code")
@@ -51,39 +52,31 @@ func (s *Server) handleAuth2(w http.ResponseWriter, req *http.Request) {
 	// Validate state.
 	sess, err := aesite.GetSession(ctx, s.dsClient, req)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("getting session: %s", err), http.StatusInternalServerError)
-		return
+		return errors.Wrap(err, "getting session")
 	}
 	err = sess.CSRFCheck(state)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("in CSRF check: %s", err), http.StatusBadRequest)
-		return
+		return mid.CodeErr{C: http.StatusBadRequest, Err: err}
 	}
 
-	conf, err := s.oauthConf(ctx)
+	conf, err := s.getOauthConf(ctx)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("getting OAuth config: %s", err), http.StatusInternalServerError)
-		return
+		return errors.Wrap(err, "getting OAuth config")
 	}
 	token, err := conf.Exchange(ctx, code)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("getting OAuth token: %s", err), http.StatusInternalServerError)
-		return
+		return errors.Wrap(err, "getting OAuth token")
 	}
-
 	oauthClient := conf.Client(ctx, token)
-	// TODO: rate limiting?
 
 	gmailSvc, err := gmail.NewService(ctx, option.WithHTTPClient(oauthClient))
 	if err != nil {
-		http.Error(w, fmt.Sprintf("creating gmail service client: %s", err), http.StatusInternalServerError)
-		return
+		return errors.Wrap(err, "creating gmail service client")
 	}
 
 	prof, err := gmailSvc.Users.GetProfile("me").Do()
 	if err != nil {
-		http.Error(w, fmt.Sprintf("getting gmail profile: %s", err), http.StatusInternalServerError)
-		return
+		return errors.Wrap(err, "getting gmail profile")
 	}
 
 	var (
@@ -92,47 +85,40 @@ func (s *Server) handleAuth2(w http.ResponseWriter, req *http.Request) {
 	)
 
 	err = aesite.LookupUser(ctx, s.dsClient, addr, &u)
-	if errors.Is(err, datastore.ErrNoSuchEntity) {
+	if stderrs.Is(err, datastore.ErrNoSuchEntity) {
 		u.InboxOnly = true // Force true for now. Later, add a UI for toggling this.
 		err = aesite.NewUser(ctx, s.dsClient, addr, "", &u)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("creating user %s: %s", addr, err), http.StatusInternalServerError)
-			return
+			return errors.Wrapf(err, "creating user %s", addr)
 		}
 	} else if err != nil {
-		http.Error(w, fmt.Sprintf("looking up user %s: %s", addr, err), http.StatusInternalServerError)
-		return
+		return errors.Wrapf(err, "looking up user %s", addr)
 	}
 
 	sess.UserKey = u.Key()
 	_, err = s.dsClient.Put(ctx, sess.Key(), sess)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("storing session: %s", err), http.StatusInternalServerError)
-		return
+		return errors.Wrap(err, "storing session")
 	}
 
 	tokenJSON, err := json.Marshal(token)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("JSON-marshaling OAuth token: %s", err), http.StatusInternalServerError)
-		return
+		return errors.Wrap(err, "JSON-marshaling OAuth token")
 	}
 	u.Token = string(tokenJSON)
 
 	err = s.maybeCreateLabel(ctx, gmailSvc, "Contacts")
 	if err != nil {
-		http.Error(w, fmt.Sprintf("creating Contacts label: %s", err), http.StatusInternalServerError)
-		return
+		return errors.Wrap(err, "creating Contacts label")
 	}
 	err = s.maybeCreateLabel(ctx, gmailSvc, "Contacts/Starred")
 	if err != nil {
-		http.Error(w, fmt.Sprintf("creating Contacts/Starred label: %s", err), http.StatusInternalServerError)
-		return
+		return errors.Wrap(err, "creating Contacts/Starred label")
 	}
 
 	labelsResp, err := gmailSvc.Users.Labels.List("me").Do()
 	if err != nil {
-		http.Error(w, fmt.Sprintf("listing labels: %s", err), http.StatusInternalServerError)
-		return
+		return errors.Wrap(err, "listing labels")
 	}
 	for _, label := range labelsResp.Labels {
 		switch label.Name {
@@ -145,11 +131,12 @@ func (s *Server) handleAuth2(w http.ResponseWriter, req *http.Request) {
 
 	_, err = s.dsClient.Put(ctx, u.Key(), &u)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("updating user: %s", err), http.StatusInternalServerError)
-		return
+		return errors.Wrap(err, "updating user")
 	}
 
 	http.Redirect(w, req, "/", http.StatusSeeOther)
+
+	return nil
 }
 
 func (s *Server) maybeCreateLabel(ctx context.Context, gmailSvc *gmail.Service, name string) error {

@@ -1,23 +1,22 @@
 package unclog
 
 import (
-	"errors"
-	"fmt"
+	stderrs "errors"
 	"html/template"
 	"net/http"
 	"time"
 
 	"github.com/bobg/aesite"
+	"github.com/pkg/errors"
 )
 
 type homedata struct {
 	U       *user
-	Email   string
 	Enabled bool
 	Csrf    string
 }
 
-func (s *Server) handleHome(w http.ResponseWriter, req *http.Request) {
+func (s *Server) handleHome(w http.ResponseWriter, req *http.Request) error {
 	ctx := req.Context()
 
 	var data homedata
@@ -26,21 +25,18 @@ func (s *Server) handleHome(w http.ResponseWriter, req *http.Request) {
 	if aesite.IsNoSession(err) {
 		sess, err = aesite.NewSession(ctx, s.dsClient, nil)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("creating new session: %s", err), http.StatusInternalServerError)
-			return
+			return errors.Wrap(err, "creating new session")
 		}
 		sess.SetCookie(w)
 	} else if err != nil {
-		http.Error(w, fmt.Sprintf("getting session: %s", err), http.StatusInternalServerError)
-		return
+		return errors.Wrap(err, "getting session")
 	} else {
 		var u user
 		err = sess.GetUser(ctx, s.dsClient, &u)
-		if errors.Is(err, aesite.ErrAnonymous) {
+		if stderrs.Is(err, aesite.ErrAnonymous) {
 			// ok
 		} else if err != nil {
-			http.Error(w, fmt.Sprintf("getting session user: %s", err), http.StatusInternalServerError)
-			return
+			return errors.Wrap(err, "getting session user")
 		} else if u.Token == "" {
 			// ok
 		} else {
@@ -51,22 +47,17 @@ func (s *Server) handleHome(w http.ResponseWriter, req *http.Request) {
 
 	csrf, err := sess.CSRFToken()
 	if err != nil {
-		http.Error(w, fmt.Sprintf("creating CSRF token: %s", err), http.StatusInternalServerError)
-		return
+		return errors.Wrap(err, "creating CSRF token")
 	}
 	data.Csrf = csrf
 
 	tmpl, err := template.New("").Parse(home)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("parsing template: %s", err), http.StatusInternalServerError)
-		return
+		return errors.Wrap(err, "parsing template")
 	}
 
 	err = tmpl.Execute(w, data)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("rendering template: %s", err), http.StatusInternalServerError)
-		return
-	}
+	return errors.Wrap(err, "rendering template")
 }
 
 const home = `

@@ -2,6 +2,8 @@ package unclog
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
 
 	"github.com/bobg/aesite"
 	"github.com/pkg/errors"
@@ -17,10 +19,38 @@ var scopes = []string{
 	gmail.GmailModifyScope,
 }
 
-func (s *Server) oauthConf(ctx context.Context) (*oauth2.Config, error) {
-	oauthConfJSON, err := aesite.GetSetting(ctx, s.dsClient, "oauthConf")
+func (s *Server) getOauthConf(ctx context.Context) (*oauth2.Config, error) {
+	if s.oauthConf == nil {
+		oauthConfJSON, err := aesite.GetSetting(ctx, s.dsClient, "oauthConf")
+		if err != nil {
+			return nil, errors.Wrap(err, "getting oauth config")
+		}
+		conf, err := google.ConfigFromJSON(oauthConfJSON, scopes...)
+		if err != nil {
+			return nil, errors.Wrap(err, "in ConfigFromJSON")
+		}
+		s.oauthConf = conf
+	}
+	return s.oauthConf, nil
+}
+
+var errNoToken = errors.New("no token")
+
+func (s *Server) oauthClient(ctx context.Context, u *user) (*http.Client, error) {
+	if u.Token == "" {
+		return nil, errNoToken
+	}
+
+	oauthConf, err := s.getOauthConf(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "getting oauth config")
 	}
-	return google.ConfigFromJSON(oauthConfJSON, scopes...)
+
+	var token oauth2.Token
+	err = json.Unmarshal([]byte(u.Token), &token)
+	if err != nil {
+		return nil, errors.Wrap(err, "JSON-unmarshaling token")
+	}
+
+	return oauthConf.Client(ctx, &token), nil
 }
