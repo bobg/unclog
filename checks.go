@@ -2,6 +2,7 @@ package unclog
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -77,7 +78,10 @@ func (s *Server) checkTaskQueue(req *http.Request) error {
 
 	h := strings.TrimSpace(req.Header.Get("X-AppEngine-QueueName"))
 	if h != s.queueName() {
-		return mid.CodeErr{C: http.StatusUnauthorized}
+		return mid.CodeErr{
+			C:   http.StatusUnauthorized,
+			Err: fmt.Errorf("header value %s does not match queue name %s", h, s.queueName()),
+		}
 	}
 	return nil
 }
