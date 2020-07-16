@@ -15,4 +15,5 @@ require (
 	google.golang.org/api v0.29.0
 	google.golang.org/appengine v1.6.5
 	google.golang.org/genproto v0.0.0-20200331122359-1ee6d9798940
+	google.golang.org/grpc v1.28.0
 )

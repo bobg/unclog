@@ -25,6 +25,8 @@ import (
 	"google.golang.org/api/option"
 	"google.golang.org/api/people/v1"
 	"google.golang.org/genproto/googleapis/cloud/tasks/v2"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type PushMessage struct {
@@ -114,7 +116,7 @@ func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) (err error
 			},
 		},
 	})
-	if err != nil {
+	if err != nil && status.Code(err) != codes.AlreadyExists {
 		return errors.Wrapf(err, "enqueueing update task for %s at %s", u.Email, when)
 	}
 
@@ -137,8 +139,10 @@ func (s *Server) taskName(email string, when time.Time) string {
 	return fmt.Sprintf("%s/tasks/%s", s.queueName(), string(converted))
 }
 
+const queueName = "update"
+
 func (s *Server) queueName() string {
-	return fmt.Sprintf("projects/%s/locations/%s/queues/update", s.projectID, s.locationID)
+	return fmt.Sprintf("projects/%s/locations/%s/queues/%s", s.projectID, s.locationID, queueName)
 }
 
 func (s *Server) taskURL(email, date string) string {
