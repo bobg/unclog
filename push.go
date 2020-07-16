@@ -38,7 +38,13 @@ type PushPayload struct {
 	Addr string `json:"emailAddress"`
 }
 
-func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) error {
+func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) (err error) {
+	defer func() {
+		if err != nil {
+			log.Printf("ERROR %s", err)
+		}
+	}()
+
 	if !strings.EqualFold(req.Method, "POST") {
 		return mid.CodeErr{C: http.StatusMethodNotAllowed}
 	}
@@ -48,7 +54,7 @@ func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) error {
 
 	var msg PushMessage
 	dec := json.NewDecoder(req.Body)
-	err := dec.Decode(&msg)
+	err = dec.Decode(&msg)
 	if err != nil {
 		return mid.CodeErr{C: http.StatusBadRequest, Err: errors.Wrap(err, "JSON-decoding request body")}
 	}
@@ -99,7 +105,7 @@ func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) error {
 			MessageType: &tasks.Task_AppEngineHttpRequest{
 				AppEngineHttpRequest: &tasks.AppEngineHttpRequest{
 					HttpMethod:  tasks.HttpMethod_GET,
-					RelativeUri: s.taskURL(u.Email),
+					RelativeUri: s.taskURL(u.Email, msg.Date),
 				},
 			},
 			ScheduleTime: &timestamp.Timestamp{
@@ -135,18 +141,27 @@ func (s *Server) queueName() string {
 	return fmt.Sprintf("projects/%s/locations/%s/queues/update", s.projectID, s.locationID)
 }
 
-func (s *Server) taskURL(email string) string {
+func (s *Server) taskURL(email, date string) string {
 	u, _ := url.Parse("/t/update")
 
 	v := url.Values{}
 	v.Set("email", email)
+	if date != "" {
+		v.Set("date", date)
+	}
 	u.RawQuery = v.Encode()
 
 	return u.String()
 }
 
-func (s *Server) handleUpdate(w http.ResponseWriter, req *http.Request) error {
-	err := s.checkTaskQueue(req)
+func (s *Server) handleUpdate(w http.ResponseWriter, req *http.Request) (err error) {
+	defer func() {
+		if err != nil {
+			log.Printf("ERROR %s", err)
+		}
+	}()
+
+	err = s.checkTaskQueue(req)
 	if err != nil {
 		return err
 	}
