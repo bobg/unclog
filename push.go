@@ -116,7 +116,9 @@ func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) (err error
 			},
 		},
 	})
-	if err != nil && status.Code(err) != codes.AlreadyExists {
+	if status.Code(err) == codes.AlreadyExists {
+		log.Printf("deduped update task for %s at %s", u.Email, when)
+	} else if err != nil {
 		return errors.Wrapf(err, "enqueueing update task for %s at %s", u.Email, when)
 	}
 
