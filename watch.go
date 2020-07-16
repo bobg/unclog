@@ -45,6 +45,6 @@ func (s *Server) watchHelper(ctx context.Context, u *user, watch bool) error {
 		u.WatchExpiry = time.Time{}
 	}
 
-	_, err = s.dsClient.Put(ctx, u.Key(), &u)
+	_, err = s.dsClient.Put(ctx, u.Key(), u)
 	return errors.Wrap(err, "updating user")
 }
