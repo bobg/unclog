@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 
+	cloudtasks "cloud.google.com/go/cloudtasks/apiv2"
 	"cloud.google.com/go/datastore"
 	"github.com/bobg/aesite"
 	"github.com/pkg/errors"
@@ -15,9 +16,10 @@ import (
 
 func cliServe(ctx context.Context, flagset *flag.FlagSet, args []string) error {
 	var (
-		creds     = flagset.String("creds", "", "credentials file")
-		projectID = flagset.String("project", "unclog", "project ID")
-		test      = flagset.Bool("test", false, "run in test mode")
+		creds      = flagset.String("creds", "", "credentials file")
+		projectID  = flagset.String("project", "unclog", "project ID")
+		locationID = flagset.String("location", "us-west2", "location ID")
+		test       = flagset.Bool("test", false, "run in test mode")
 	)
 
 	err := flagset.Parse(args)
@@ -44,8 +46,12 @@ func cliServe(ctx context.Context, flagset *flag.FlagSet, args []string) error {
 	if err != nil {
 		return errors.Wrap(err, "creating datastore client")
 	}
+	ctClient, err := cloudtasks.NewClient(ctx, options...)
+	if err != nil {
+		return errors.Wrap(err, "creating cloudtasks client")
+	}
 
-	s := unclog.NewServer(dsClient)
+	s := unclog.NewServer(dsClient, ctClient, *projectID, *locationID)
 	err = s.Serve(ctx)
 
 	return errors.Wrap(err, "running server")

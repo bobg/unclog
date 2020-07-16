@@ -31,6 +31,10 @@ github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03
 github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802/go.mod h1:IVnqGOEym/WlBOVXweHU+Q+/VP0lqqI8lqeDx9IjBqo=
 github.com/bobg/aesite v1.3.0 h1:mjoN7pt0OcJfA1iUCEtKLHMs4R+2nRyskKh75tyR/F8=
 github.com/bobg/aesite v1.3.0/go.mod h1:3OQmmMju2TngZJAYkbz5u31b+xf+1TVUK4N9JQzr43s=
+github.com/bobg/aesite v1.4.0 h1:gj+QCIcmh2ErrVETUX4brz6zP3vZGzLX9RCQkdamYjw=
+github.com/bobg/aesite v1.4.0/go.mod h1:ccd3m2NkKSQPk8urxcRdUZQvxx8WoiAd7RkD/vUqs5k=
+github.com/bobg/basexx v0.0.0-20191130163404-b0c4bda224a5 h1:pPQao/LZD4W8kXPb+TRUGUoT2uXqN11mAOAJ9kAx3gU=
+github.com/bobg/basexx v0.0.0-20191130163404-b0c4bda224a5/go.mod h1:TUZ3/ZfQrnD0AMpTd+1qeiJ8ogd4fo5wbs4d3lwJUD0=
 github.com/bobg/mid v0.0.0-20200713145327-6aad62583272 h1:CqWDTJ6GE08G06nYXubwnSeYOe+PhWaxS3N1MaaT9nk=
 github.com/bobg/mid v0.0.0-20200713145327-6aad62583272/go.mod h1:o3bq+8gZFEP1W/nuhDj3rQC5T8zYdS95HeSSDi/UWk8=
 github.com/census-instrumentation/opencensus-proto v0.2.1/go.mod h1:f6KPmirojxKA12rnyqOA5BBL4O983OfeGPqjHWSTneU=

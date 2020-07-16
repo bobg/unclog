@@ -2,23 +2,29 @@ package unclog
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	stderrs "errors"
 	"fmt"
 	"log"
 	"net/http"
 	"net/mail"
+	"net/url"
 	"strings"
 	"time"
 
 	"cloud.google.com/go/datastore"
 	"github.com/bobg/aesite"
+	"github.com/bobg/basexx"
 	"github.com/bobg/mid"
+	"github.com/golang/protobuf/ptypes/timestamp"
 	"github.com/pkg/errors"
 	"google.golang.org/api/gmail/v1"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 	"google.golang.org/api/people/v1"
+	"google.golang.org/genproto/googleapis/cloud/tasks/v2"
 )
 
 type PushMessage struct {
@@ -32,7 +38,7 @@ type PushPayload struct {
 	Addr string `json:"emailAddress"`
 }
 
-func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) (err error) {
+func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) error {
 	if !strings.EqualFold(req.Method, "POST") {
 		return mid.CodeErr{C: http.StatusMethodNotAllowed}
 	}
@@ -42,7 +48,7 @@ func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) (err error
 
 	var msg PushMessage
 	dec := json.NewDecoder(req.Body)
-	err = dec.Decode(&msg)
+	err := dec.Decode(&msg)
 	if err != nil {
 		return mid.CodeErr{C: http.StatusBadRequest, Err: errors.Wrap(err, "JSON-decoding request body")}
 	}
@@ -63,28 +69,103 @@ func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) (err error
 	ctx := req.Context()
 
 	now := time.Now()
-	deadline := now.Add(time.Minute)
-	ctx, cancel := context.WithDeadline(ctx, deadline)
-	defer cancel()
 
-	var u user
+	var (
+		u    user
+		when time.Time
+	)
 	err = aesite.UpdateUser(ctx, s.dsClient, payload.Addr, &u, func(*datastore.Transaction) error {
-		if u.LeaseExpiry.After(now) {
-			return fmt.Errorf("lease will expire at %s", u.LeaseExpiry)
+		if u.NextUpdate.After(now) {
+			when = u.NextUpdate
+		} else {
+			when = now
+			u.NextUpdate = now.Add(time.Minute)
 		}
-		u.LeaseExpiry = deadline
 		return nil
 	})
-	if err != nil {
-		log.Printf("locking user %s: %s", payload.Addr, err)
-		return nil
+	if err != nil && !stderrs.Is(err, aesite.ErrUpdateConflict) { // OK to ignore ErrUpdateConflict
+		return errors.Wrap(err, "getting user and updating next-update time")
 	}
-	defer func() {
-		aesite.UpdateUser(ctx, s.dsClient, payload.Addr, &u, func(*datastore.Transaction) error {
-			u.LeaseExpiry = time.Time{}
-			return nil
-		})
-	}()
+
+	var (
+		secs  = when.Unix()
+		nanos = int32(when.UnixNano() % int64(time.Second))
+	)
+
+	_, err = s.ctClient.CreateTask(ctx, &tasks.CreateTaskRequest{
+		Parent: s.queueName(),
+		Task: &tasks.Task{
+			Name: s.taskName(u.Email, when),
+			MessageType: &tasks.Task_AppEngineHttpRequest{
+				AppEngineHttpRequest: &tasks.AppEngineHttpRequest{
+					HttpMethod:  tasks.HttpMethod_GET,
+					RelativeUri: s.taskURL(u.Email),
+				},
+			},
+			ScheduleTime: &timestamp.Timestamp{
+				Seconds: secs,
+				Nanos:   nanos,
+			},
+		},
+	})
+	if err != nil {
+		return errors.Wrapf(err, "enqueueing update task for %s at %s", u.Email, when)
+	}
+
+	return nil
+}
+
+func (s *Server) taskName(email string, when time.Time) string {
+	hasher := sha256.New()
+	hasher.Write([]byte{1}) // version of this hash
+	fmt.Fprintf(hasher, "%s %s", email, when)
+	h := hasher.Sum(nil)
+	src := basexx.NewBuffer(h, basexx.Binary)
+	buf := make([]byte, basexx.Length(256, 50, len(h)))
+	dest := basexx.NewBuffer(buf[:], basexx.Base50)
+	_, err := basexx.Convert(dest, src)
+	if err != nil {
+		panic(err)
+	}
+	converted := dest.Written()
+	return fmt.Sprintf("%s/tasks/%s", s.queueName(), string(converted))
+}
+
+func (s *Server) queueName() string {
+	return fmt.Sprintf("projects/%s/locations/%s/queues/update", s.projectID, s.locationID)
+}
+
+func (s *Server) taskURL(email string) string {
+	u, _ := url.Parse("/t/update")
+
+	v := url.Values{}
+	v.Set("email", email)
+	u.RawQuery = v.Encode()
+
+	return u.String()
+}
+
+func (s *Server) handleUpdate(w http.ResponseWriter, req *http.Request) error {
+	err := s.checkTaskQueue(req)
+	if err != nil {
+		return err
+	}
+
+	var (
+		ctx   = req.Context()
+		date  = req.FormValue("date")
+		email = req.FormValue("email")
+		now   = time.Now()
+	)
+
+	var u user
+	err = aesite.UpdateUser(ctx, s.dsClient, email, &u, func(*datastore.Transaction) error {
+		nextUpdate := now.Add(time.Minute)
+		if nextUpdate.After(u.NextUpdate) {
+			u.NextUpdate = nextUpdate
+		}
+		return nil
+	})
 
 	oauthClient, err := s.oauthClient(ctx, &u) // xxx check for errNoToken
 	if err != nil {
@@ -140,8 +221,8 @@ func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) (err error
 	} else {
 		query = "-in:chats"
 	}
-	if msg.Date != "" {
-		d, err := ParseDate(msg.Date)
+	if date != "" {
+		d, err := ParseDate(date)
 		if err != nil {
 			return errors.Wrap(err, "parsing date")
 		}
@@ -149,19 +230,31 @@ func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) (err error
 		d = nextDate(d)
 		query += fmt.Sprintf(" before:%d/%02d/%02d", d.Y, d.M, d.D)
 	} else {
-		oneWeekAgo := now.Add(-7 * 24 * time.Hour)
-		startTime := u.LastThreadTime
+		var (
+			oneWeekAgo = now.Add(-7 * 24 * time.Hour)
+			startTime  = u.LastThreadTime.Add(-5 * time.Second) // a little overlap, so nothing gets missed
+		)
 		if startTime.Before(oneWeekAgo) {
 			startTime = oneWeekAgo
 		}
-		query += fmt.Sprintf(" after:%d", startTime.Unix()-2) // a little overlap, so nothing gets missed
+		query += fmt.Sprintf(" after:%d", startTime.Unix())
 	}
+
+	var numThreads, numStarred, numUnstarred int
+	defer log.Printf("processing %s: %d thread(s), %d starred, %d unstarred", u.Email, numThreads, numStarred, numUnstarred)
 
 	err = gmailSvc.Users.Threads.List("me").Q(query).Pages(ctx, func(resp *gmail.ListThreadsResponse) error {
 		for _, thread := range resp.Threads {
-			threadTime, err := handleThread(ctx, gmailSvc, &u, thread.Id, starred, unstarred)
+			threadTime, outcome, err := handleThread(ctx, gmailSvc, &u, thread.Id, starred, unstarred)
 			if err != nil {
 				return errors.Wrapf(err, "handling thread %s", thread.Id)
+			}
+			numThreads++
+			switch outcome {
+			case outcomeStarred:
+				numStarred++
+			case outcomeUnstarred:
+				numUnstarred++
 			}
 			if threadTime.After(u.LastThreadTime) {
 				u.LastThreadTime = threadTime
@@ -177,10 +270,18 @@ func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) (err error
 	return errors.Wrap(err, "processing latest threads")
 }
 
-func handleThread(ctx context.Context, gmailSvc *gmail.Service, u *user, threadID string, starred, unstarred []*people.Person) (time.Time, error) {
+type outcome int
+
+const (
+	outcomeNone outcome = iota
+	outcomeStarred
+	outcomeUnstarred
+)
+
+func handleThread(ctx context.Context, gmailSvc *gmail.Service, u *user, threadID string, starred, unstarred []*people.Person) (time.Time, outcome, error) {
 	thread, err := gmailSvc.Users.Threads.Get("me", threadID).Format("metadata").MetadataHeaders("from").Do()
 	if err != nil {
-		return time.Time{}, errors.Wrap(err, "getting thread members")
+		return time.Time{}, outcomeNone, errors.Wrap(err, "getting thread members")
 	}
 
 	var (
@@ -215,25 +316,30 @@ func handleThread(ctx context.Context, gmailSvc *gmail.Service, u *user, threadI
 			break
 		}
 	}
-	var req *gmail.ModifyThreadRequest
+	var (
+		req *gmail.ModifyThreadRequest
+		o   = outcomeNone
+	)
 	if starredAddr != "" {
 		req = &gmail.ModifyThreadRequest{
 			AddLabelIds:    []string{u.StarredLabelID},
 			RemoveLabelIds: []string{u.ContactsLabelID},
 		}
+		o = outcomeStarred
 	} else if contactAddr != "" {
 		req = &gmail.ModifyThreadRequest{
 			AddLabelIds:    []string{u.ContactsLabelID},
 			RemoveLabelIds: []string{u.StarredLabelID},
 		}
+		o = outcomeUnstarred
 	}
 	if req != nil {
 		_, err = gmailSvc.Users.Threads.Modify("me", threadID, req).Do()
 		if err != nil && !googleapi.IsNotModified(err) {
-			return time.Time{}, errors.Wrap(err, "updating thread")
+			return time.Time{}, outcomeNone, errors.Wrap(err, "updating thread")
 		}
 	}
-	return threadTime, nil
+	return threadTime, o, nil
 }
 
 func addrIn(addr string, persons []*people.Person) bool {

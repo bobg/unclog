@@ -20,6 +20,9 @@ var scopes = []string{
 }
 
 func (s *Server) getOauthConf(ctx context.Context) (*oauth2.Config, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if s.oauthConf == nil {
 		oauthConfJSON, err := aesite.GetSetting(ctx, s.dsClient, "oauthConf")
 		if err != nil {

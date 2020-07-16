@@ -4,8 +4,9 @@ import (
 	"context"
 	"net/http"
 	"os"
-	"strings"
+	"sync"
 
+	cloudtasks "cloud.google.com/go/cloudtasks/apiv2"
 	"cloud.google.com/go/datastore"
 	"github.com/bobg/mid"
 	"golang.org/x/oauth2"
@@ -13,12 +14,18 @@ import (
 )
 
 type Server struct {
-	addr      string
-	dsClient  *datastore.Client
+	addr       string
+	dsClient   *datastore.Client
+	ctClient   *cloudtasks.Client
+	projectID  string
+	locationID string
+
+	mu        sync.Mutex // protects the following cached values
 	oauthConf *oauth2.Config
+	masterKey string
 }
 
-func NewServer(dsClient *datastore.Client) *Server {
+func NewServer(dsClient *datastore.Client, ctClient *cloudtasks.Client, projectID, locationID string) *Server {
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
@@ -33,14 +40,24 @@ func NewServer(dsClient *datastore.Client) *Server {
 
 func (s *Server) Serve(ctx context.Context) error {
 	mux := http.NewServeMux()
+
+	// User-initiated.
 	mux.Handle("/", mid.Err(s.handleHome))
 	mux.Handle("/auth", mid.Err(s.handleAuth))
-	mux.Handle("/auth2", mid.Err(s.handleAuth2))
 	mux.Handle("/enable", mid.Err(s.handleEnable))
 	mux.Handle("/disable", mid.Err(s.handleDisable))
+
+	// OAuth-flow-initiated.
+	mux.Handle("/auth2", mid.Err(s.handleAuth2))
+
+	// Pubsub-initiated.
 	mux.Handle("/push", mid.Err(s.handlePush))
 
+	// Cron-initiated.
 	mux.Handle("/t/renew", mid.Log(mid.Err(s.handleRenew)))
+
+	// Taskqueue-initiated.
+	mux.Handle("/t/update", mid.Log(mid.Err(s.handleUpdate)))
 
 	httpSrv := &http.Server{
 		Addr:    s.addr,
@@ -60,15 +77,4 @@ func (s *Server) Serve(ctx context.Context) error {
 	err := httpSrv.ListenAndServe()
 	<-done
 	return err
-}
-
-func (s *Server) checkCron(req *http.Request) error {
-	if !appengine.IsAppEngine() {
-		return nil
-	}
-	h := strings.TrimSpace(req.Header.Get("X-Appengine-Cron"))
-	if h != "true" {
-		return mid.CodeErr{C: http.StatusUnauthorized}
-	}
-	return nil
 }

@@ -13,19 +13,16 @@ const pubsubTopic = "projects/unclog/topics/gmail"
 type user struct {
 	aesite.User
 
-	// ContactsLabelID is the Gmail label ID of this user's "Contacts" label.
+	InboxOnly bool
+
+	Token string
+
 	ContactsLabelID string
+	StarredLabelID  string
 
-	// StarredLabelID is the Gmail label ID of this user's "Contacts/Starred" label.
-	StarredLabelID string
-
-	// LeaseExpiry is the time when this user will be available to handle a push request.
-	LeaseExpiry time.Time
-
-	InboxOnly      bool
+	NextUpdate     time.Time
 	LastThreadTime time.Time
 	WatchExpiry    time.Time
-	Token          string
 }
 
 func (u *user) GetUser() *aesite.User {
