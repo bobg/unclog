@@ -33,8 +33,11 @@ func NewServer(dsClient *datastore.Client, ctClient *cloudtasks.Client, projectI
 	addr := ":" + port
 
 	return &Server{
-		addr:     addr,
-		dsClient: dsClient,
+		addr:       addr,
+		dsClient:   dsClient,
+		ctClient:   ctClient,
+		projectID:  projectID,
+		locationID: locationID,
 	}
 }
 
