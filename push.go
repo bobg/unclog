@@ -95,6 +95,11 @@ func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) (err error
 		return errors.Wrap(err, "getting user and updating next-update time")
 	}
 
+	if u.WatchExpiry.IsZero() {
+		log.Printf("ignoring push for disabled user %s", u.Email)
+		return nil
+	}
+
 	var (
 		secs  = when.Unix()
 		nanos = int32(when.UnixNano() % int64(time.Second))

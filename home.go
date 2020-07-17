@@ -3,16 +3,20 @@ package unclog
 import (
 	stderrs "errors"
 	"html/template"
+	"log"
 	"net/http"
 	"time"
 
 	"github.com/bobg/aesite"
 	"github.com/pkg/errors"
+	"google.golang.org/api/gmail/v1"
+	"google.golang.org/api/option"
 )
 
 type homedata struct {
 	U       *user
 	Enabled bool
+	Expired bool
 	Csrf    string
 }
 
@@ -37,11 +41,31 @@ func (s *Server) handleHome(w http.ResponseWriter, req *http.Request) error {
 			// ok
 		} else if err != nil {
 			return errors.Wrap(err, "getting session user")
-		} else if u.Token == "" {
-			// ok
 		} else {
 			data.U = &u
-			data.Enabled = u.WatchExpiry.After(time.Now())
+			if u.Token != "" {
+				client, err := s.oauthClient(ctx, &u)
+				if err != nil {
+					return errors.Wrapf(err, "creating oauth client for %s", u.Email)
+				}
+				gmailSvc, err := gmail.NewService(ctx, option.WithHTTPClient(client))
+				if err != nil {
+					return errors.Wrapf(err, "creating gmail client for %s", u.Email)
+				}
+				_, err = gmailSvc.Users.GetProfile("me").Do()
+				if err != nil {
+					log.Printf("Getting profile for %s: %s", u.Email, err)
+					u.Token = ""
+					_, err = s.dsClient.Put(ctx, u.Key(), &u)
+					if err != nil {
+						return errors.Wrapf(err, "updating user %s after token expiry", u.Email)
+					}
+					data.Expired = true
+				} else {
+					// xxx check prof.EmailAddress == u.Email?
+					data.Enabled = u.WatchExpiry.After(time.Now())
+				}
+			}
 		}
 	}
 
@@ -68,7 +92,7 @@ const home = `
   </head>
   <body>
     <h1>Unclog - U Need Contact Labeling On Gmail</h1>
-    {{ if .U }}
+    {{ if (and .U (not .Expired)) }}
       {{ if .Enabled }}
         <p>
           Unclog is presently enabled for {{ .U.Email }}.
@@ -95,8 +119,13 @@ const home = `
     {{ else }}
       <form method="POST" action="/auth">
 				<p>
-					Press to get started.
-					You will be asked to grant permissions to Unclog.
+          {{ if .Expired }}
+            Unclog’s permissions have expired.
+            Press to reauthorize Unclog.
+          {{ else }}
+						Press to get started.
+						You will be asked to grant permissions to Unclog.
+          {{ end }}
 					<button type="submit">Go</button>
 				</p>
       </form>
