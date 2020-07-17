@@ -262,7 +262,6 @@ func (s *Server) handleUpdate(w http.ResponseWriter, req *http.Request) (err err
 	}
 
 	var numThreads, numStarred, numUnstarred int
-	defer log.Printf("processing %s: %d thread(s), %d starred, %d unstarred", u.Email, numThreads, numStarred, numUnstarred)
 
 	err = gmailSvc.Users.Threads.List("me").Q(query).Pages(ctx, func(resp *gmail.ListThreadsResponse) error {
 		for _, thread := range resp.Threads {
@@ -287,8 +286,12 @@ func (s *Server) handleUpdate(w http.ResponseWriter, req *http.Request) (err err
 		}
 		return nil
 	})
+	if err != nil {
+		return errors.Wrap(err, "processing latest threads")
+	}
 
-	return errors.Wrap(err, "processing latest threads")
+	log.Printf("processing %s: %d thread(s), %d starred, %d unstarred", u.Email, numThreads, numStarred, numUnstarred)
+	return nil
 }
 
 type outcome int
