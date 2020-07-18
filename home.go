@@ -1,8 +1,8 @@
 package unclog
 
 import (
+	"encoding/json"
 	stderrs "errors"
-	"html/template"
 	"log"
 	"net/http"
 	"time"
@@ -14,13 +14,13 @@ import (
 )
 
 type homedata struct {
-	U       *user
-	Enabled bool
-	Expired bool
-	Csrf    string
+	Email   string `json:"email"`
+	Enabled bool   `json:"enabled"`
+	Expired bool   `json:"expired"`
+	Csrf    string `json:"csrf"`
 }
 
-func (s *Server) handleHome(w http.ResponseWriter, req *http.Request) error {
+func (s *Server) handleData(w http.ResponseWriter, req *http.Request) error {
 	ctx := req.Context()
 
 	var data homedata
@@ -42,7 +42,7 @@ func (s *Server) handleHome(w http.ResponseWriter, req *http.Request) error {
 		} else if err != nil {
 			return errors.Wrap(err, "getting session user")
 		} else {
-			data.U = &u
+			data.Email = u.Email
 			if u.Token != "" {
 				client, err := s.oauthClient(ctx, &u)
 				if err != nil {
@@ -75,61 +75,6 @@ func (s *Server) handleHome(w http.ResponseWriter, req *http.Request) error {
 	}
 	data.Csrf = csrf
 
-	tmpl, err := template.New("").Parse(home)
-	if err != nil {
-		return errors.Wrap(err, "parsing template")
-	}
-
-	err = tmpl.Execute(w, data)
-	return errors.Wrap(err, "rendering template")
+	err = json.NewEncoder(w).Encode(data)
+	return errors.Wrap(err, "rendering JSON response")
 }
-
-const home = `
-<html>
-  <head>
-    <title>Unclog</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  </head>
-  <body>
-    <h1>Unclog - U Need Contact Labeling On Gmail</h1>
-    {{ if (and .U (not .Expired)) }}
-      {{ if .Enabled }}
-        <p>
-          Unclog is presently enabled for {{ .U.Email }}.
-        </p>
-        <form method="POST" action="/disable">
-          <p>
-            Press to disable Unclog.
-            <input type="hidden" name="csrf" value="{{ .Csrf }}">
-            <button type="submit">Disable</button>
-          </p>
-        </form>
-      {{ else }}
-        <p>
-          Unclog is presently disabled for {{ .U.Email }}.
-        </p>
-				<form method="POST" action="/enable">
-          <p>
-						Press to enable Unclog.
-						<input type="hidden" name="csrf" value="{{ .Csrf }}">
-						<button type="submit">Enable</button>
-          </p>
-				</form>
-      {{ end }}
-    {{ else }}
-      <form method="POST" action="/auth">
-				<p>
-          {{ if .Expired }}
-            Unclog’s permissions have expired.
-            Press to reauthorize Unclog.
-          {{ else }}
-						Press to get started.
-						You will be asked to grant permissions to Unclog.
-          {{ end }}
-					<button type="submit">Go</button>
-				</p>
-      </form>
-    {{ end }}
-  </body>
-</html>
-`
