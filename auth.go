@@ -107,13 +107,13 @@ func (s *Server) handleAuth2(w http.ResponseWriter, req *http.Request) error {
 	}
 	u.Token = string(tokenJSON)
 
-	err = s.maybeCreateLabel(ctx, gmailSvc, "Contacts")
+	err = s.maybeCreateLabel(ctx, gmailSvc, "✔")
 	if err != nil {
-		return errors.Wrap(err, "creating Contacts label")
+		return errors.Wrap(err, "creating ✔ label")
 	}
-	err = s.maybeCreateLabel(ctx, gmailSvc, "Contacts/Starred")
+	err = s.maybeCreateLabel(ctx, gmailSvc, "✔/🟊")
 	if err != nil {
-		return errors.Wrap(err, "creating Contacts/Starred label")
+		return errors.Wrap(err, "creating ✔/🟊 label")
 	}
 
 	labelsResp, err := gmailSvc.Users.Labels.List("me").Do()
@@ -122,9 +122,9 @@ func (s *Server) handleAuth2(w http.ResponseWriter, req *http.Request) error {
 	}
 	for _, label := range labelsResp.Labels {
 		switch label.Name {
-		case "Contacts":
+		case "✔":
 			u.ContactsLabelID = label.Id
-		case "Contacts/Starred":
+		case "✔/🟊":
 			u.StarredLabelID = label.Id
 		}
 	}
