@@ -1,5 +1,4 @@
 import React from 'react'
-import logo from './logo.svg'
 import './App.css'
 import { Loader } from 'semantic-ui-react'
 
@@ -30,14 +29,14 @@ class App extends React.Component<{}, State> {
 
   private enable = async () => {
     const { csrf } = this.state
-    const resp = await post('/s/enable', { csrf })
+    await post('/s/enable', { csrf })
     // xxx check resp
     this.setState({ enabled: true })
   }
 
   private disable = async () => {
     const { csrf } = this.state
-    const resp = await post('/s/disable', { csrf })
+    await post('/s/disable', { csrf })
     // xxx check resp
     this.setState({ enabled: false })
   }
@@ -105,7 +104,11 @@ class App extends React.Component<{}, State> {
                 <p>
                   <em>Should</em> you trust Unclog? You can decide for yourself
                   by looking at
-                  <a target='_blank' href='https://github.com/bobg/unclog'>
+                  <a
+                    target='_blank'
+                    rel='noopener noreferrer'
+                    href='https://github.com/bobg/unclog'
+                  >
                     Unclog’s source code on GitHub.
                   </a>
                 </p>
@@ -117,7 +120,11 @@ class App extends React.Component<{}, State> {
               more — but strangely it doesn’t do the one most useful kind of
               automatic classification: labeling the messages that come from
               people in your{' '}
-              <a target='_blank' href='https://contacts.google.com/'>
+              <a
+                target='_blank'
+                rel='noopener noreferrer'
+                href='https://contacts.google.com/'
+              >
                 Google Contacts
               </a>
               .
