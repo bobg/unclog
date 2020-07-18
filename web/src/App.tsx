@@ -111,6 +111,29 @@ class App extends React.Component<{}, State> {
                 </p>
               </>
             )}
+            <p>
+              Gmail classifies your incoming mail in a bunch of ways —
+              identifying spam, social media updates, transaction receipts, and
+              more — but strangely it doesn’t do the one most useful kind of
+              automatic classification: labeling the messages that come from
+              people in your{' '}
+              <a target='_blank' href='https://contacts.google.com/'>
+                Google Contacts
+              </a>
+              .
+            </p>
+            <p>
+              This is where Unclog comes in. When you enable Unclog, it compares
+              the sender of each incoming message against the e-mail addresses
+              in your Google Contacts. If it finds a match, it labels the
+              message with a “✔”. If the contact is “starred” in Google
+              Contacts, it gets a “★” label.
+            </p>
+            <p>
+              Now you can select the “✔” or the “★” view instead of the Inbox in
+              order to see the messages most important to you, minus the clutter
+              of the other messages in your Inbox.
+            </p>
           </>
         ) : (
           <Loader active size='large' />
