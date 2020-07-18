@@ -5,7 +5,8 @@ test:
 
 check:
 	go vet ./...
-	(cd web; npx tsc --project . --noEmit)
+	(cd web; npx tsc --noEmit)
 
 deploy:
+	(cd web; npx tsc)
 	gcloud app deploy --project unclog app.yaml cron.yaml
