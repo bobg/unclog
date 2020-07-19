@@ -57,11 +57,6 @@ class App extends React.Component<{}, State> {
     this.setState({ enabled: false })
   }
 
-  private auth = async () => {
-    window.location.href = '/s/auth'
-  }
-  private reauth = this.auth
-
   public componentDidMount = () => this.getData()
 
   public render() {
@@ -95,7 +90,9 @@ class App extends React.Component<{}, State> {
                           The authorization for Unclog to access {email} has
                           expired
                         </Card.Text>
-                        <Button onClick={this.reauth}>Reauthorize</Button>
+                        <form action='/auth'>
+                          <Button type='submit'>Reauthorize</Button>
+                        </form>
                       </>
                     ) : (
                       <>
@@ -127,7 +124,9 @@ class App extends React.Component<{}, State> {
                       To get started, you must authorize Unclog to access your
                       Gmail account
                     </Card.Text>
-                    <Button onClick={this.auth}>Authorize</Button>
+                    <form action='/auth'>
+                      <Button type='submit'>Authorize</Button>
+                    </form>
                     <Card.Text>
                       <strong>Note</strong> This preview version of Unclog has
                       not yet undergone a security review by Google. You will
