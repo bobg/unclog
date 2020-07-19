@@ -59,12 +59,7 @@ class App extends React.Component<{}, State> {
   public componentDidMount = () => this.getData()
 
   public render() {
-    const {
-      email,
-      enabled,
-      expired,
-      loaded,
-    } = this.state
+    const { email, enabled, expired, loaded } = this.state
     const num_threads = this.state.num_threads || 0
     const num_labeled = this.state.num_labeled || 0
 
@@ -103,13 +98,13 @@ class App extends React.Component<{}, State> {
                     </p>
                   </>
                 )}
-                {num_threads > 0 && (
+                {num_threads > 0 ? (
                   <div>
                     Unclog has labeled{' '}
                     {((num_labeled * 100) / num_threads).toFixed(1)}% of your
                     e-mail.
                   </div>
-                )}
+                ) : null}
               </>
             ) : (
               <>
