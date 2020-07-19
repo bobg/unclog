@@ -1,6 +1,6 @@
 import React from 'react'
 import './App.css'
-import { Spinner } from 'react-bootstrap'
+import { Button, Card, Spinner } from 'react-bootstrap'
 
 import { Alert, doAlert, setAlertRef } from './Alert'
 import { post } from './post'
@@ -74,95 +74,110 @@ class App extends React.Component<{}, State> {
           <>
             {email ? (
               <>
-                {enabled ? (
-                  <>
-                    <p>Unclog is presently enabled for {email}</p>
-                    <p>
-                      <button onClick={this.disable}>Disable Unclog</button>
-                    </p>
-                  </>
-                ) : expired ? (
-                  <>
-                    <p>
-                      The authorization for Unclog to access {email} has expired
-                    </p>
-                    <p>
-                      <button onClick={this.reauth}>Reauthorize</button>
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <p>Unclog is authorized but disabled for {email}</p>
-                    <p>
-                      <button onClick={this.enable}>Enable Unclog</button>
-                    </p>
-                  </>
-                )}
+                <Card>
+                  <Card.Body>
+                    {enabled ? (
+                      <>
+                        <Card.Text>
+                          Unclog is presently enabled for {email}
+                        </Card.Text>
+                        <Button onClick={this.disable}>Disable Unclog</Button>
+                      </>
+                    ) : expired ? (
+                      <>
+                        <Card.Text>
+                          The authorization for Unclog to access {email} has
+                          expired
+                        </Card.Text>
+                        <Button onClick={this.reauth}>Reauthorize</Button>
+                      </>
+                    ) : (
+                      <>
+                        <Card.Text>
+                          Unclog is authorized but disabled for {email}
+                        </Card.Text>
+                        <Button onClick={this.enable}>Enable Unclog</Button>
+                      </>
+                    )}
+                  </Card.Body>
+                </Card>
                 {num_threads > 0 ? (
-                  <div>
-                    Unclog has labeled{' '}
-                    {((num_labeled * 100) / num_threads).toFixed(1)}% of your
-                    e-mail.
-                  </div>
+                  <Card>
+                    <Card.Body>
+                      <Card.Text>
+                        Unclog has labeled{' '}
+                        {((num_labeled * 100) / num_threads).toFixed(1)}% of
+                        your e-mail.
+                      </Card.Text>
+                    </Card.Body>
+                  </Card>
                 ) : null}
               </>
             ) : (
               <>
-                <p>
-                  To get started, you must authorize Unclog to access your Gmail
-                  account
-                </p>
-                <p>
-                  <button onClick={this.auth}>Authorize</button>
-                </p>
-                <p>
-                  <strong>Note</strong> This preview version of Unclog has not
-                  yet undergone a security review by Google. You will see a
-                  screen warning that the app is not verified. If you trust
-                  Unclog, you can bypass this warning by clicking “Advanced.”
-                </p>
-                <p>
-                  <em>Should</em> you trust Unclog? You can decide for yourself
-                  by looking at{' '}
+                <Card>
+                  <Card.Body>
+                    <Card.Text>
+                      To get started, you must authorize Unclog to access your
+                      Gmail account
+                    </Card.Text>
+                    <Button onClick={this.auth}>Authorize</Button>
+                    <Card.Text>
+                      <strong>Note</strong> This preview version of Unclog has
+                      not yet undergone a security review by Google. You will
+                      see a screen warning that the app is not verified. If you
+                      trust Unclog, you can bypass this warning by clicking
+                      “Advanced.”
+                    </Card.Text>
+                    <Card.Text>
+                      <em>Should</em> you trust Unclog? You can decide for
+                      yourself by looking at{' '}
+                      <a
+                        target='_blank'
+                        rel='noopener noreferrer'
+                        href='https://github.com/bobg/unclog'
+                      >
+                        {' '}
+                        Unclog’s source code on GitHub.
+                      </a>
+                    </Card.Text>
+                  </Card.Body>
+                </Card>
+              </>
+            )}
+            <Card>
+              <Card.Body>
+                <Card.Title>About Unclog</Card.Title>
+                <Card.Text>
+                  Gmail classifies your incoming mail in a bunch of ways —
+                  identifying spam, social media updates, transaction receipts,
+                  and more — but strangely it doesn’t do the one most useful
+                  kind of automatic classification: labeling the messages that
+                  come from people in your{' '}
                   <a
                     target='_blank'
                     rel='noopener noreferrer'
-                    href='https://github.com/bobg/unclog'
+                    href='https://contacts.google.com/'
                   >
                     {' '}
-                    Unclog’s source code on GitHub.
+                    Google Contacts
                   </a>
-                </p>
-              </>
-            )}
-            <p>
-              Gmail classifies your incoming mail in a bunch of ways —
-              identifying spam, social media updates, transaction receipts, and
-              more — but strangely it doesn’t do the one most useful kind of
-              automatic classification: labeling the messages that come from
-              people in your{' '}
-              <a
-                target='_blank'
-                rel='noopener noreferrer'
-                href='https://contacts.google.com/'
-              >
-                {' '}
-                Google Contacts
-              </a>
-              .
-            </p>
-            <p>
-              This is where Unclog comes in. When you enable Unclog, it compares
-              the sender of each incoming message against the e-mail addresses
-              in your Google Contacts. If it finds a match, it labels the
-              message with a “✔”. If the contact is “starred” in Google
-              Contacts, it gets a “★” label.
-            </p>
-            <p>
-              Now you can select the “✔” or the “★” view instead of the Inbox in
-              order to see the messages most important to you, minus the clutter
-              of the other messages in your Inbox.
-            </p>
+                  .
+                </Card.Text>
+                <Card.Text>
+                  This is where Unclog comes in. When you enable Unclog, it
+                  compares the sender of each incoming message against the
+                  e-mail addresses in your Google Contacts. If it finds a match,
+                  it labels the message with a “✔”. If the contact is “starred”
+                  in Google Contacts, it gets a “★” label.
+                </Card.Text>
+                <Card.Text>
+                  Now you can select the “✔” or the “★” view instead of the
+                  Inbox in order to see the messages most important to you,
+                  minus the clutter of the other messages in your Inbox.
+                </Card.Text>
+              </Card.Body>
+            </Card>
           </>
         ) : (
           <Spinner animation='border' role='status' />

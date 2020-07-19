@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/mail"
 	"net/url"
+	"reflect"
 	"strings"
 	"time"
 
@@ -22,6 +23,7 @@ import (
 	"github.com/pkg/errors"
 	"google.golang.org/api/gmail/v1"
 	"google.golang.org/api/googleapi"
+	"google.golang.org/api/idtoken"
 	"google.golang.org/api/option"
 	"google.golang.org/api/people/v1"
 	"google.golang.org/genproto/googleapis/cloud/tasks/v2"
@@ -52,6 +54,11 @@ func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) (err error
 	}
 	if ct := req.Header.Get("Content-Type"); !strings.EqualFold(ct, "application/json") {
 		return mid.CodeErr{C: http.StatusBadRequest, Err: fmt.Errorf("content type %s not allowed", ct)}
+	}
+
+	err = s.checkAuthHeader(req)
+	if err != nil {
+		return mid.CodeErr{C: http.StatusUnauthorized, Err: err}
 	}
 
 	var msg PushMessage
@@ -270,7 +277,9 @@ func (s *Server) handleUpdate(w http.ResponseWriter, req *http.Request) (err err
 
 	err = gmailSvc.Users.Threads.List("me").Q(query).Pages(ctx, func(resp *gmail.ListThreadsResponse) error {
 		for _, thread := range resp.Threads {
-			threadTime, outcome, err := handleThread(ctx, gmailSvc, &u, thread.Id, starred, unstarred)
+			uCopy := u
+
+			outcome, err := handleThread(ctx, gmailSvc, &u, thread.Id, starred, unstarred)
 			if err != nil {
 				return errors.Wrapf(err, "handling thread %s", thread.Id)
 			}
@@ -281,8 +290,7 @@ func (s *Server) handleUpdate(w http.ResponseWriter, req *http.Request) (err err
 			case outcomeUnstarred:
 				numUnstarred++
 			}
-			if threadTime.After(u.LastThreadTime) {
-				u.LastThreadTime = threadTime
+			if !reflect.DeepEqual(u, uCopy) {
 				_, err = s.dsClient.Put(ctx, u.Key(), &u)
 				if err != nil {
 					return errors.Wrap(err, "storing last-thread time")
@@ -307,10 +315,10 @@ const (
 	outcomeUnstarred
 )
 
-func handleThread(ctx context.Context, gmailSvc *gmail.Service, u *user, threadID string, starred, unstarred []*people.Person) (time.Time, outcome, error) {
+func handleThread(ctx context.Context, gmailSvc *gmail.Service, u *user, threadID string, starred, unstarred []*people.Person) (outcome, error) {
 	thread, err := gmailSvc.Users.Threads.Get("me", threadID).Format("metadata").MetadataHeaders("from").Do()
 	if err != nil {
-		return time.Time{}, outcomeNone, errors.Wrap(err, "getting thread members")
+		return outcomeNone, errors.Wrap(err, "getting thread members")
 	}
 
 	var (
@@ -388,10 +396,15 @@ func handleThread(ctx context.Context, gmailSvc *gmail.Service, u *user, threadI
 	if req != nil {
 		_, err = gmailSvc.Users.Threads.Modify("me", threadID, req).Do()
 		if err != nil && !googleapi.IsNotModified(err) {
-			return time.Time{}, outcomeNone, errors.Wrap(err, "updating thread")
+			return outcomeNone, errors.Wrap(err, "updating thread")
 		}
 	}
-	return threadTime, o, nil
+
+	if threadTime.After(u.LastThreadTime) {
+		u.LastThreadTime = threadTime
+	}
+
+	return o, nil
 }
 
 func addrIn(addr string, persons []*people.Person) bool {
@@ -403,4 +416,34 @@ func addrIn(addr string, persons []*people.Person) bool {
 		}
 	}
 	return false
+}
+
+func (s *Server) checkAuthHeader(req *http.Request) error {
+	err := s.checkMasterKey(req)
+	if err == nil { // sic
+		return nil
+	}
+	authHeader := req.Header.Get("Authorization")
+	if authHeader == "" {
+		log.Printf("checkAuthHeader: no Authorization field")
+		return nil // xxx
+	}
+	parts := strings.Split(authHeader, " ")
+	if len(parts) != 2 {
+		log.Printf("checkAuthHeader: len(parts) is %d [%s]", len(parts), authHeader)
+		return nil // xxx
+	}
+	if !strings.EqualFold(parts[0], "Bearer") {
+		log.Printf("checkAuthHeader: parts[0] is %s [%s]", parts[0], authHeader)
+		return nil // xxx
+	}
+	tok := parts[1]
+	_, err = idtoken.Validate(req.Context(), tok, "")
+	if err != nil {
+		log.Printf("checkAuthHeader: idtoken.Validate produced %s [%s]", err, authHeader)
+		return nil // xxx
+	}
+
+	log.Printf("checkAuthHeader: OK [%s]", authHeader)
+	return nil
 }
