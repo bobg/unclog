@@ -19,11 +19,10 @@ import (
 func (s *Server) handleAuth(w http.ResponseWriter, req *http.Request) error {
 	ctx := req.Context()
 
-	sess, err := aesite.NewSession(ctx, s.dsClient, nil)
+	sess, err := aesite.GetSession(ctx, s.dsClient, req)
 	if err != nil {
-		return errors.Wrap(err, "creating session")
+		return errors.Wrap(err, "getting session")
 	}
-	sess.SetCookie(w)
 
 	csrf, err := sess.CSRFToken()
 	if err != nil {
