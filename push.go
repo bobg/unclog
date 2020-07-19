@@ -314,18 +314,30 @@ func handleThread(ctx context.Context, gmailSvc *gmail.Service, u *user, threadI
 	}
 
 	var (
-		starredAddr, contactAddr string
-		threadTime               time.Time
+		starredAddr, unstarredAddr   string
+		foundStarred, foundUnstarred bool
+		threadTime                   time.Time
 	)
 	for _, msg := range thread.Messages {
 		msgTime := timeFromMillis(msg.InternalDate)
 		if msgTime.After(threadTime) {
 			threadTime = msgTime
 		}
+		if !foundStarred || !foundUnstarred {
+			for _, labelID := range msg.LabelIds {
+				switch labelID {
+				case u.StarredLabelID:
+					foundStarred = true
+				case u.ContactsLabelID:
+					foundUnstarred = true
+				}
+			}
+		}
 		if starredAddr != "" {
 			// No need to keep looking for addresses,
 			// but do keep iterating over messages
-			// to get an accurate value for threadTime.
+			// to get accurate values for threadTime,
+			// foundStarred, and foundUnstarred.
 			continue
 		}
 		for _, header := range msg.Payload.Headers {
@@ -340,7 +352,7 @@ func handleThread(ctx context.Context, gmailSvc *gmail.Service, u *user, threadI
 			if addrIn(parsed.Address, starred) {
 				starredAddr = parsed.Address
 			} else if addrIn(parsed.Address, unstarred) {
-				contactAddr = parsed.Address
+				unstarredAddr = parsed.Address
 			}
 			break
 		}
@@ -349,18 +361,29 @@ func handleThread(ctx context.Context, gmailSvc *gmail.Service, u *user, threadI
 		req *gmail.ModifyThreadRequest
 		o   = outcomeNone
 	)
-	if starredAddr != "" {
+
+	u.NumThreads++
+
+	if starredAddr != "" && !foundStarred {
+		u.NumLabeled++
 		req = &gmail.ModifyThreadRequest{
 			AddLabelIds:    []string{u.StarredLabelID},
 			RemoveLabelIds: []string{u.ContactsLabelID},
 		}
 		o = outcomeStarred
-	} else if contactAddr != "" {
+	} else if unstarredAddr != "" && !foundUnstarred {
+		u.NumLabeled++
 		req = &gmail.ModifyThreadRequest{
 			AddLabelIds:    []string{u.ContactsLabelID},
 			RemoveLabelIds: []string{u.StarredLabelID},
 		}
 		o = outcomeUnstarred
+	} else if foundStarred || foundUnstarred {
+		// Thread is labeled but should not be.
+		// (Maybe someone was removed from the user's contacts?)
+		req = &gmail.ModifyThreadRequest{
+			RemoveLabelIds: []string{u.StarredLabelID, u.ContactsLabelID},
+		}
 	}
 	if req != nil {
 		_, err = gmailSvc.Users.Threads.Modify("me", threadID, req).Do()

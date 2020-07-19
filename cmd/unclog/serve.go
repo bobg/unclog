@@ -19,6 +19,7 @@ func cliServe(ctx context.Context, flagset *flag.FlagSet, args []string) error {
 		creds      = flagset.String("creds", "", "credentials file")
 		projectID  = flagset.String("project", "unclog", "project ID")
 		locationID = flagset.String("location", "us-west2", "location ID")
+		contentDir = flagset.String("dir", "web/build", "content dir")
 		test       = flagset.Bool("test", false, "run in test mode")
 	)
 
@@ -51,7 +52,7 @@ func cliServe(ctx context.Context, flagset *flag.FlagSet, args []string) error {
 		return errors.Wrap(err, "creating cloudtasks client")
 	}
 
-	s := unclog.NewServer(dsClient, ctClient, *projectID, *locationID)
+	s := unclog.NewServer(dsClient, ctClient, *projectID, *locationID, *contentDir)
 	err = s.Serve(ctx)
 
 	return errors.Wrap(err, "running server")

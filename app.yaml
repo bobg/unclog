@@ -2,6 +2,23 @@ runtime: go113
 main: ./cmd/unclog
 
 handlers:
-- url: /
+- url: /s/.*
   script: auto
+  secure: always
+- url: /t/.*
+  script: auto
+  secure: always
+- url: /auth2
+  script: auto
+  secure: always
+- url: /push
+  script: auto
+  secure: always
+- url: /(..*)
+  static_files: web/build/\1
+  upload: web/build/.*
+  secure: always
+- url: /
+  static_files: web/build/index.html
+  upload: web/build/index.html
   secure: always

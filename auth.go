@@ -111,9 +111,9 @@ func (s *Server) handleAuth2(w http.ResponseWriter, req *http.Request) error {
 	if err != nil {
 		return errors.Wrap(err, "creating ✔ label")
 	}
-	err = s.maybeCreateLabel(ctx, gmailSvc, "✔/🟊")
+	err = s.maybeCreateLabel(ctx, gmailSvc, "✔/★")
 	if err != nil {
-		return errors.Wrap(err, "creating ✔/🟊 label")
+		return errors.Wrap(err, "creating ✔/★ label")
 	}
 
 	labelsResp, err := gmailSvc.Users.Labels.List("me").Do()
@@ -124,7 +124,7 @@ func (s *Server) handleAuth2(w http.ResponseWriter, req *http.Request) error {
 		switch label.Name {
 		case "✔":
 			u.ContactsLabelID = label.Id
-		case "✔/🟊":
+		case "✔/★":
 			u.StarredLabelID = label.Id
 		}
 	}
