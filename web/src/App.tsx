@@ -1,6 +1,7 @@
 import React from 'react'
 import './App.css'
-import { Button, Card, CardGroup, Spinner } from 'react-bootstrap'
+import { Button, Card, Spinner } from 'react-bootstrap'
+import styled from 'styled-components'
 
 import { Alert, doAlert, setAlertRef } from './Alert'
 import { post } from './post'
@@ -14,6 +15,11 @@ interface State {
   num_labeled?: number
   loaded: boolean
 }
+
+const MyCard = styled(Card)`
+  margin: auto;
+  width: 40rem;
+`
 
 class App extends React.Component<{}, State> {
   public state: State = { loaded: false }
@@ -71,10 +77,10 @@ class App extends React.Component<{}, State> {
           <h2>U Need Contact Labeling On Gmail</h2>
         </header>
         {loaded ? (
-          <CardGroup>
+          <>
             {email ? (
               <>
-                <Card>
+                <MyCard>
                   <Card.Body>
                     {enabled ? (
                       <>
@@ -100,9 +106,9 @@ class App extends React.Component<{}, State> {
                       </>
                     )}
                   </Card.Body>
-                </Card>
+                </MyCard>
                 {num_threads > 0 ? (
-                  <Card>
+                  <MyCard>
                     <Card.Body>
                       <Card.Text>
                         Unclog has labeled{' '}
@@ -110,12 +116,12 @@ class App extends React.Component<{}, State> {
                         your e-mail.
                       </Card.Text>
                     </Card.Body>
-                  </Card>
+                  </MyCard>
                 ) : null}
               </>
             ) : (
               <>
-                <Card>
+                <MyCard>
                   <Card.Body>
                     <Card.Text>
                       To get started, you must authorize Unclog to access your
@@ -142,10 +148,10 @@ class App extends React.Component<{}, State> {
                       </a>
                     </Card.Text>
                   </Card.Body>
-                </Card>
+                </MyCard>
               </>
             )}
-            <Card>
+            <MyCard>
               <Card.Body>
                 <Card.Title>About Unclog</Card.Title>
                 <Card.Text>
@@ -177,8 +183,8 @@ class App extends React.Component<{}, State> {
                   minus the clutter of the other messages in your Inbox.
                 </Card.Text>
               </Card.Body>
-            </Card>
-          </CardGroup>
+            </MyCard>
+          </>
         ) : (
           <Spinner animation='border' role='status' />
         )}
