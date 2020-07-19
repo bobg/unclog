@@ -1,6 +1,6 @@
 import React from 'react'
 import './App.css'
-import { Button, Card, Spinner } from 'react-bootstrap'
+import { Button, Card, CardGroup, Spinner } from 'react-bootstrap'
 
 import { Alert, doAlert, setAlertRef } from './Alert'
 import { post } from './post'
@@ -71,7 +71,7 @@ class App extends React.Component<{}, State> {
           <h2>U Need Contact Labeling On Gmail</h2>
         </header>
         {loaded ? (
-          <>
+          <CardGroup>
             {email ? (
               <>
                 <Card>
@@ -178,7 +178,7 @@ class App extends React.Component<{}, State> {
                 </Card.Text>
               </Card.Body>
             </Card>
-          </>
+          </CardGroup>
         ) : (
           <Spinner animation='border' role='status' />
         )}
