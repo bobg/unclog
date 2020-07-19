@@ -63,10 +63,10 @@ class App extends React.Component<{}, State> {
       email,
       enabled,
       expired,
-      num_threads,
-      num_labeled,
       loaded,
     } = this.state
+    const num_threads = this.state.num_threads || 0
+    const num_labeled = this.state.num_labeled || 0
 
     return (
       <div className='App'>
@@ -103,11 +103,11 @@ class App extends React.Component<{}, State> {
                     </p>
                   </>
                 )}
-                {num_threads && (
+                {num_threads > 0 && (
                   <div>
                     Unclog has labeled{' '}
-                    {(((num_labeled || 0) * 100) / num_threads).toFixed(1)}% of
-                    your e-mail.
+                    {((num_labeled * 100) / num_threads).toFixed(1)}% of your
+                    e-mail.
                   </div>
                 )}
               </>
