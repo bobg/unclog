@@ -18,7 +18,7 @@ interface State {
 
 const MyCard = styled(Card)`
   margin: auto;
-  width: 40rem;
+  max-width: 40rem;
 `
 
 class App extends React.Component<{}, State> {
