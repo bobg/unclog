@@ -1,6 +1,6 @@
 import React from 'react'
 import './App.css'
-import { Loader } from 'semantic-ui-react'
+import { Spinner } from 'react-bootstrap'
 
 import { Alert, doAlert, setAlertRef } from './Alert'
 import { post } from './post'
@@ -10,6 +10,8 @@ interface State {
   email?: string
   enabled?: boolean
   expired?: boolean
+  num_threads?: number
+  num_labeled?: number
   loaded: boolean
 }
 
@@ -20,8 +22,16 @@ class App extends React.Component<{}, State> {
     try {
       const resp = await fetch('/s/data', { method: 'GET' })
       const data = await resp.json()
-      const { csrf, email, enabled, expired } = data
-      this.setState({ csrf, email, enabled, expired, loaded: true })
+      const { csrf, email, enabled, expired, num_threads, num_labeled } = data
+      this.setState({
+        csrf,
+        email,
+        enabled,
+        expired,
+        num_threads,
+        num_labeled,
+        loaded: true,
+      })
     } catch (error) {
       doAlert('Error loading data. Please try reloading this page in a moment.')
     }
@@ -49,7 +59,14 @@ class App extends React.Component<{}, State> {
   public componentDidMount = () => this.getData()
 
   public render() {
-    const { email, enabled, expired, loaded } = this.state
+    const {
+      email,
+      enabled,
+      expired,
+      num_threads,
+      num_labeled,
+      loaded,
+    } = this.state
 
     return (
       <div className='App'>
@@ -61,30 +78,39 @@ class App extends React.Component<{}, State> {
         {loaded ? (
           <>
             {email ? (
-              enabled ? (
-                <>
-                  <p>Unclog is presently enabled for {email}</p>
-                  <p>
-                    <button onClick={this.disable}>Disable Unclog</button>
-                  </p>
-                </>
-              ) : expired ? (
-                <>
-                  <p>
-                    The authorization for Unclog to access {email} has expired
-                  </p>
-                  <p>
-                    <button onClick={this.reauth}>Reauthorize</button>
-                  </p>
-                </>
-              ) : (
-                <>
-                  <p>Unclog is authorized but disabled for {email}</p>
-                  <p>
-                    <button onClick={this.enable}>Enable Unclog</button>
-                  </p>
-                </>
-              )
+              <>
+                {enabled ? (
+                  <>
+                    <p>Unclog is presently enabled for {email}</p>
+                    <p>
+                      <button onClick={this.disable}>Disable Unclog</button>
+                    </p>
+                  </>
+                ) : expired ? (
+                  <>
+                    <p>
+                      The authorization for Unclog to access {email} has expired
+                    </p>
+                    <p>
+                      <button onClick={this.reauth}>Reauthorize</button>
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p>Unclog is authorized but disabled for {email}</p>
+                    <p>
+                      <button onClick={this.enable}>Enable Unclog</button>
+                    </p>
+                  </>
+                )}
+                {num_threads && (
+                  <div>
+                    Unclog has labeled{' '}
+                    {(((num_labeled || 0) * 100) / num_threads).toFixed(1)}% of
+                    your e-mail.
+                  </div>
+                )}
+              </>
             ) : (
               <>
                 <p>
@@ -95,20 +121,20 @@ class App extends React.Component<{}, State> {
                   <button onClick={this.auth}>Authorize</button>
                 </p>
                 <p>
-                  <strong>Note</strong>
-                  This preview version of Unclog has not yet undergone a
-                  security review by Google. You will see a screen warning that
-                  the app is not verified. If you trust Unclog, you can bypass
-                  this warning by clicking “Advanced.”
+                  <strong>Note</strong> This preview version of Unclog has not
+                  yet undergone a security review by Google. You will see a
+                  screen warning that the app is not verified. If you trust
+                  Unclog, you can bypass this warning by clicking “Advanced.”
                 </p>
                 <p>
                   <em>Should</em> you trust Unclog? You can decide for yourself
-                  by looking at
+                  by looking at{' '}
                   <a
                     target='_blank'
                     rel='noopener noreferrer'
                     href='https://github.com/bobg/unclog'
                   >
+                    {' '}
                     Unclog’s source code on GitHub.
                   </a>
                 </p>
@@ -125,6 +151,7 @@ class App extends React.Component<{}, State> {
                 rel='noopener noreferrer'
                 href='https://contacts.google.com/'
               >
+                {' '}
                 Google Contacts
               </a>
               .
@@ -143,7 +170,7 @@ class App extends React.Component<{}, State> {
             </p>
           </>
         ) : (
-          <Loader active size='large' />
+          <Spinner animation='border' role='status' />
         )}
       </div>
     )

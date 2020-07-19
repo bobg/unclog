@@ -23,6 +23,9 @@ type user struct {
 	NextUpdate     time.Time
 	LastThreadTime time.Time
 	WatchExpiry    time.Time
+
+	NumThreads int
+	NumLabeled int
 }
 
 func (u *user) GetUser() *aesite.User {
