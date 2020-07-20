@@ -8,7 +8,6 @@ import (
 
 	"cloud.google.com/go/datastore"
 	"github.com/bobg/aesite"
-	"github.com/bobg/mid"
 	"github.com/pkg/errors"
 	"golang.org/x/oauth2"
 	"google.golang.org/api/gmail/v1"
@@ -24,17 +23,12 @@ func (s *Server) handleAuth(w http.ResponseWriter, req *http.Request) error {
 		return errors.Wrap(err, "getting session")
 	}
 
-	csrf, err := sess.CSRFToken()
-	if err != nil {
-		return errors.Wrap(err, "creating CSRF token")
-	}
-
 	conf, err := s.getOauthConf(ctx)
 	if err != nil {
 		return errors.Wrap(err, "getting OAuth config")
 	}
 
-	url := conf.AuthCodeURL(csrf, oauth2.AccessTypeOffline, oauth2.ApprovalForce)
+	url := conf.AuthCodeURL(sess.Key().Encode(), oauth2.AccessTypeOffline, oauth2.ApprovalForce)
 	http.Redirect(w, req, url, http.StatusSeeOther)
 
 	return nil
@@ -48,14 +42,13 @@ func (s *Server) handleAuth2(w http.ResponseWriter, req *http.Request) error {
 		state = req.FormValue("state")
 	)
 
-	// Validate state.
-	sess, err := aesite.GetSession(ctx, s.dsClient, req)
+	sessKey, err := datastore.DecodeKey(state)
+	if err != nil {
+		return errors.Wrap(err, "decoding session key")
+	}
+	sess, err := aesite.GetSessionByKey(ctx, s.dsClient, sessKey)
 	if err != nil {
 		return errors.Wrap(err, "getting session")
-	}
-	err = sess.CSRFCheck(state)
-	if err != nil {
-		return mid.CodeErr{C: http.StatusBadRequest, Err: err}
 	}
 
 	conf, err := s.getOauthConf(ctx)

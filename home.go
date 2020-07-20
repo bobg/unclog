@@ -39,12 +39,9 @@ func (s *Server) handleData(w http.ResponseWriter, req *http.Request) error {
 			return errors.Wrap(err, "creating new session")
 		}
 		sess.SetCookie(w)
-		log.Printf("xxx created new session, added cookie %s", w.Header().Get("Set-Cookie"))
 	} else if err != nil {
 		return errors.Wrap(err, "getting session")
 	} else {
-		log.Print("xxx found existing session")
-
 		var u user
 		err = sess.GetUser(ctx, s.dsClient, &u)
 		if stderrs.Is(err, aesite.ErrAnonymous) {

@@ -425,25 +425,16 @@ func (s *Server) checkAuthHeader(req *http.Request) error {
 	}
 	authHeader := req.Header.Get("Authorization")
 	if authHeader == "" {
-		log.Printf("checkAuthHeader: no Authorization field")
-		return nil // xxx
+		return errors.New("no Authorization field")
 	}
 	parts := strings.Split(authHeader, " ")
 	if len(parts) != 2 {
-		log.Printf("checkAuthHeader: len(parts) is %d [%s]", len(parts), authHeader)
-		return nil // xxx
+		return fmt.Errorf("Authorization field has %d part(s), want 2", len(parts))
 	}
 	if !strings.EqualFold(parts[0], "Bearer") {
-		log.Printf("checkAuthHeader: parts[0] is %s [%s]", parts[0], authHeader)
-		return nil // xxx
+		return fmt.Errorf("Authorization type is %s, want Bearer", parts[0])
 	}
 	tok := parts[1]
 	_, err = idtoken.Validate(req.Context(), tok, "")
-	if err != nil {
-		log.Printf("checkAuthHeader: idtoken.Validate produced %s [%s]", err, authHeader)
-		return nil // xxx
-	}
-
-	log.Printf("checkAuthHeader: OK [%s]", authHeader)
-	return nil
+	return errors.Wrap(err, "validating Authorization token")
 }
