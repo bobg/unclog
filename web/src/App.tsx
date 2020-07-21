@@ -11,8 +11,6 @@ interface State {
   email?: string
   enabled?: boolean
   expired?: boolean
-  num_threads?: number
-  num_labeled?: number
   loaded: boolean
 }
 
@@ -28,14 +26,12 @@ class App extends React.Component<{}, State> {
     try {
       const resp = await fetch('/s/data', { method: 'GET' })
       const data = await resp.json()
-      const { csrf, email, enabled, expired, num_threads, num_labeled } = data
+      const { csrf, email, enabled, expired } = data
       this.setState({
         csrf,
         email,
         enabled,
         expired,
-        num_threads,
-        num_labeled,
         loaded: true,
       })
     } catch (error) {
@@ -66,8 +62,6 @@ class App extends React.Component<{}, State> {
 
   public render() {
     const { email, enabled, expired, loaded } = this.state
-    const num_threads = this.state.num_threads || 0
-    const num_labeled = this.state.num_labeled || 0
 
     return (
       <div className='App'>
@@ -79,77 +73,61 @@ class App extends React.Component<{}, State> {
         {loaded ? (
           <>
             {email ? (
-              <>
-                <MyCard>
-                  <Card.Body>
-                    {enabled ? (
-                      <>
-                        <Card.Text>
-                          Unclog is presently enabled for {email}
-                        </Card.Text>
-                        <Button onClick={this.disable}>Disable Unclog</Button>
-                      </>
-                    ) : expired ? (
-                      <>
-                        <Card.Text>
-                          The authorization for Unclog to access {email} has
-                          expired
-                        </Card.Text>
-                        <Button onClick={this.reauth}>Reauthorize</Button>
-                      </>
-                    ) : (
-                      <>
-                        <Card.Text>
-                          Unclog is authorized but disabled for {email}
-                        </Card.Text>
-                        <Button onClick={this.enable}>Enable Unclog</Button>
-                      </>
-                    )}
-                  </Card.Body>
-                </MyCard>
-                {num_threads > 0 ? (
-                  <MyCard>
-                    <Card.Body>
+              <MyCard>
+                <Card.Body>
+                  {enabled ? (
+                    <>
                       <Card.Text>
-                        Unclog has labeled{' '}
-                        {((num_labeled * 100) / num_threads).toFixed(1)}% of
-                        your e-mail.
+                        Unclog is presently enabled for {email}
                       </Card.Text>
-                    </Card.Body>
-                  </MyCard>
-                ) : null}
-              </>
+                      <Button onClick={this.disable}>Disable Unclog</Button>
+                    </>
+                  ) : expired ? (
+                    <>
+                      <Card.Text>
+                        The authorization for Unclog to access {email} has
+                        expired
+                      </Card.Text>
+                      <Button onClick={this.reauth}>Reauthorize</Button>
+                    </>
+                  ) : (
+                    <>
+                      <Card.Text>
+                        Unclog is authorized but disabled for {email}
+                      </Card.Text>
+                      <Button onClick={this.enable}>Enable Unclog</Button>
+                    </>
+                  )}
+                </Card.Body>
+              </MyCard>
             ) : (
-              <>
-                <MyCard>
-                  <Card.Body>
-                    <Card.Text>
-                      To get started, you must authorize Unclog to access your
-                      Gmail account
-                    </Card.Text>
-                    <Button onClick={this.auth}>Authorize</Button>
-                    <Card.Text>
-                      <strong>Note</strong> This preview version of Unclog has
-                      not yet undergone a security review by Google. You will
-                      see a screen warning that the app is not verified. If you
-                      trust Unclog, you can bypass this warning by clicking
-                      “Advanced.”
-                    </Card.Text>
-                    <Card.Text>
-                      <em>Should</em> you trust Unclog? You can decide for
-                      yourself by looking at{' '}
-                      <a
-                        target='_blank'
-                        rel='noopener noreferrer'
-                        href='https://github.com/bobg/unclog'
-                      >
-                        {' '}
-                        Unclog’s source code on GitHub.
-                      </a>
-                    </Card.Text>
-                  </Card.Body>
-                </MyCard>
-              </>
+              <MyCard>
+                <Card.Body>
+                  <Card.Text>
+                    To get started, you must authorize Unclog to access your
+                    Gmail account
+                  </Card.Text>
+                  <Button onClick={this.auth}>Authorize</Button>
+                  <Card.Text>
+                    <strong>Note</strong> This preview version of Unclog has not
+                    yet undergone a security review by Google. You will see a
+                    screen warning that the app is not verified. If you trust
+                    Unclog, you can bypass this warning by clicking “Advanced.”
+                  </Card.Text>
+                  <Card.Text>
+                    <em>Should</em> you trust Unclog? You can decide for
+                    yourself by looking at{' '}
+                    <a
+                      target='_blank'
+                      rel='noopener noreferrer'
+                      href='https://github.com/bobg/unclog'
+                    >
+                      {' '}
+                      Unclog’s source code on GitHub.
+                    </a>
+                  </Card.Text>
+                </Card.Body>
+              </MyCard>
             )}
             <MyCard>
               <Card.Body>

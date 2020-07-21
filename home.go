@@ -21,10 +21,8 @@ type homedata struct {
 	Email string `json:"email"`
 
 	// The following are only present if Email is.
-	Enabled    bool `json:"enabled"`
-	Expired    bool `json:"expired"`
-	NumThreads int  `json:"num_threads"`
-	NumLabeled int  `json:"num_labeled"`
+	Enabled bool `json:"enabled"`
+	Expired bool `json:"expired"`
 }
 
 func (s *Server) handleData(w http.ResponseWriter, req *http.Request) error {
@@ -50,8 +48,6 @@ func (s *Server) handleData(w http.ResponseWriter, req *http.Request) error {
 			return errors.Wrap(err, "getting session user")
 		} else {
 			data.Email = u.Email
-			data.NumThreads = u.NumThreads
-			data.NumLabeled = u.NumLabeled
 			if u.Token != "" {
 				client, err := s.oauthClient(ctx, &u)
 				if err != nil {
