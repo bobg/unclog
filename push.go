@@ -273,23 +273,15 @@ func (s *Server) handleUpdate(w http.ResponseWriter, req *http.Request) (err err
 		query += fmt.Sprintf(" after:%d", startTime.Unix())
 	}
 
-	var numThreads, numStarred, numUnstarred int
-
 	err = gmailSvc.Users.Threads.List("me").Q(query).Pages(ctx, func(resp *gmail.ListThreadsResponse) error {
 		for _, thread := range resp.Threads {
 			uCopy := u
 
-			outcome, err := handleThread(ctx, gmailSvc, &u, thread.Id, starred, unstarred)
+			err := handleThread(ctx, gmailSvc, &u, thread.Id, starred, unstarred)
 			if err != nil {
 				return errors.Wrapf(err, "handling thread %s", thread.Id)
 			}
-			numThreads++
-			switch outcome {
-			case outcomeStarred:
-				numStarred++
-			case outcomeUnstarred:
-				numUnstarred++
-			}
+
 			if !reflect.DeepEqual(u, uCopy) {
 				_, err = s.dsClient.Put(ctx, u.Key(), &u)
 				if err != nil {
@@ -303,30 +295,32 @@ func (s *Server) handleUpdate(w http.ResponseWriter, req *http.Request) (err err
 		return errors.Wrap(err, "processing latest threads")
 	}
 
-	log.Printf("processing %s: %d thread(s), %d starred, %d unstarred", u.Email, numThreads, numStarred, numUnstarred)
 	return nil
 }
 
-type outcome int
-
-const (
-	outcomeNone outcome = iota
-	outcomeStarred
-	outcomeUnstarred
-)
-
-func handleThread(ctx context.Context, gmailSvc *gmail.Service, u *user, threadID string, starred, unstarred []*people.Person) (outcome, error) {
-	thread, err := gmailSvc.Users.Threads.Get("me", threadID).Format("metadata").MetadataHeaders("from").Do()
+func handleThread(ctx context.Context, gmailSvc *gmail.Service, u *user, threadID string, starred, unstarred []*people.Person) error {
+	thread, err := gmailSvc.Users.Threads.Get("me", threadID).Format("metadata").MetadataHeaders("from", "subject").Do() // xxx remove "subject"
 	if err != nil {
-		return outcomeNone, errors.Wrap(err, "getting thread members")
+		return errors.Wrap(err, "getting thread members")
 	}
 
 	var (
 		starredAddr, unstarredAddr   string
 		foundStarred, foundUnstarred bool
 		threadTime                   time.Time
+		subject                      string // xxx
 	)
-	for _, msg := range thread.Messages {
+
+	for i, msg := range thread.Messages {
+		if i == 0 { // xxx
+			for _, header := range msg.Payload.Headers {
+				if strings.EqualFold(header.Name, "Subject") {
+					subject = header.Value
+					break
+				}
+			}
+		}
+
 		msgTime := timeFromMillis(msg.InternalDate)
 		if msgTime.After(threadTime) {
 			threadTime = msgTime
@@ -365,12 +359,12 @@ func handleThread(ctx context.Context, gmailSvc *gmail.Service, u *user, threadI
 			break
 		}
 	}
-	var (
-		req *gmail.ModifyThreadRequest
-		o   = outcomeNone
-	)
+
+	var req *gmail.ModifyThreadRequest
 
 	u.NumThreads++
+
+	log.Printf(`xxx thread "%s" starredAddr "%s" unstarredAddr "%s" foundStarred %v foundUnstarred %v`, subject, starredAddr, unstarredAddr, foundStarred, foundUnstarred)
 
 	if starredAddr != "" && !foundStarred {
 		u.NumLabeled++
@@ -378,14 +372,12 @@ func handleThread(ctx context.Context, gmailSvc *gmail.Service, u *user, threadI
 			AddLabelIds:    []string{u.StarredLabelID},
 			RemoveLabelIds: []string{u.ContactsLabelID},
 		}
-		o = outcomeStarred
 	} else if unstarredAddr != "" && !foundUnstarred {
 		u.NumLabeled++
 		req = &gmail.ModifyThreadRequest{
 			AddLabelIds:    []string{u.ContactsLabelID},
 			RemoveLabelIds: []string{u.StarredLabelID},
 		}
-		o = outcomeUnstarred
 	} else if foundStarred || foundUnstarred {
 		// Thread is labeled but should not be.
 		// (Maybe someone was removed from the user's contacts?)
@@ -396,7 +388,7 @@ func handleThread(ctx context.Context, gmailSvc *gmail.Service, u *user, threadI
 	if req != nil {
 		_, err = gmailSvc.Users.Threads.Modify("me", threadID, req).Do()
 		if err != nil && !googleapi.IsNotModified(err) {
-			return outcomeNone, errors.Wrap(err, "updating thread")
+			return errors.Wrap(err, "updating thread")
 		}
 	}
 
@@ -404,7 +396,7 @@ func handleThread(ctx context.Context, gmailSvc *gmail.Service, u *user, threadI
 		u.LastThreadTime = threadTime
 	}
 
-	return o, nil
+	return nil
 }
 
 func addrIn(addr string, persons []*people.Person) bool {
