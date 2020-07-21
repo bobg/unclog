@@ -132,33 +132,37 @@ class App extends React.Component<{}, State> {
             <MyCard>
               <Card.Body>
                 <Card.Title>About Unclog</Card.Title>
+                <Card.Text>Gmail has a blind spot.</Card.Text>
                 <Card.Text>
-                  Gmail classifies your incoming mail in a bunch of ways —
-                  identifying spam, social media updates, transaction receipts,
-                  and more — but strangely it doesn’t do the one most useful
-                  kind of automatic classification: labeling the messages that
-                  come from people in your{' '}
+                  It automatically classifies your mail in a lot of ways. It can
+                  tell spam apart from social-media updates, and transaction
+                  receipts apart from calendar invites.
+                </Card.Text>
+                <Card.Text>
+                  But among all the e-mail you receive, it does not help you
+                  find messages from <em>your contacts</em> — usually the
+                  messages you’re most interested in seeing.
+                </Card.Text>
+                <Card.Text>
+                  It should be able to.{' '}
                   <a
                     target='_blank'
                     rel='noopener noreferrer'
                     href='https://contacts.google.com/'
                   >
-                    {' '}
                     Google Contacts
-                  </a>
-                  .
+                  </a>{' '}
+                  already knows about the people closest to you. But it doesn’t.
                 </Card.Text>
                 <Card.Text>
-                  This is where Unclog comes in. When you enable Unclog, it
-                  compares the sender of each incoming message against the
-                  e-mail addresses in your Google Contacts. If it finds a match,
-                  it labels the message with a “✔”. If the contact is “starred”
-                  in Google Contacts, it gets a “★” label.
+                  This is where Unclog comes in. Unclog adds labels to your
+                  incoming e-mail: “✔” if the sender is in your contacts, and
+                  “★” if they’re <em>starred</em> in your contacts.
                 </Card.Text>
                 <Card.Text>
-                  Now you can select the “✔” or the “★” view instead of the
-                  Inbox in order to see the messages most important to you,
-                  minus the clutter of the other messages in your Inbox.
+                  Select the “✔” or the “★” label view instead of your Inbox in
+                  order to see correspondence with friends and family minus all
+                  the other clutter.
                 </Card.Text>
               </Card.Body>
             </MyCard>
