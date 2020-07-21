@@ -98,6 +98,10 @@ func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) (err error
 		}
 		return nil
 	})
+	if stderrs.Is(err, datastore.ErrNoSuchEntity) {
+		log.Printf("ignoring push for unknown user %s", payload.Addr)
+		return nil
+	}
 	if err != nil && !stderrs.Is(err, aesite.ErrUpdateConflict) { // OK to ignore ErrUpdateConflict
 		return errors.Wrap(err, "getting user and updating next-update time")
 	}
