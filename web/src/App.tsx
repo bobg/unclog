@@ -144,7 +144,7 @@ class App extends React.Component<{}, State> {
                   messages you’re most interested in seeing.
                 </Card.Text>
                 <Card.Text>
-                  It should be able to.{' '}
+                  It should be able to —{' '}
                   <a
                     target='_blank'
                     rel='noopener noreferrer'
@@ -152,7 +152,8 @@ class App extends React.Component<{}, State> {
                   >
                     Google Contacts
                   </a>{' '}
-                  already knows about the people closest to you. But it doesn’t.
+                  already knows about the people closest to you — but it
+                  doesn’t.
                 </Card.Text>
                 <Card.Text>
                   This is where Unclog comes in. Unclog adds labels to your
