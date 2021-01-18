@@ -92,7 +92,7 @@ func (s *Server) handleDisable(w http.ResponseWriter, req *http.Request) error {
 	}
 
 	if u.WatchExpiry.Before(now) {
-		// xxx already disabled
+		return nil
 	}
 
 	err = s.stop(ctx, &u)

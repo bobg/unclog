@@ -126,6 +126,8 @@ func (s *Server) handleAuth2(w http.ResponseWriter, req *http.Request) error {
 		return errors.Wrap(err, "updating user")
 	}
 
+	sess.SetCookie(w)
+
 	http.Redirect(w, req, "/", http.StatusSeeOther)
 
 	return nil
