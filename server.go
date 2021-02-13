@@ -64,7 +64,7 @@ func (s *Server) Serve(ctx context.Context) error {
 	mux.Handle("/push", mid.Err(s.handlePush))
 
 	// Cron-initiated.
-	mux.Handle("/t/renew", mid.Log(mid.Err(s.handleRenew)))
+	mux.Handle("/t/cron", mid.Log(mid.Err(s.handleCron)))
 
 	// Taskqueue-initiated.
 	mux.Handle("/t/update", mid.Log(mid.Err(s.handleUpdate)))

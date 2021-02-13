@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
-	stderrs "errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -42,7 +41,7 @@ type PushPayload struct {
 	Addr string `json:"emailAddress"`
 }
 
-func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) (err error) {
+func (s *Server) handlePush(_ http.ResponseWriter, req *http.Request) (err error) {
 	defer func() {
 		if err != nil {
 			log.Printf("ERROR %s", err)
@@ -81,15 +80,21 @@ func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) (err error
 
 	log.Printf("got push for %s", payload.Addr)
 
-	ctx := req.Context()
+	err = s.queueUpdate(req.Context(), payload.Addr, msg.Date)
+	if errors.Is(err, datastore.ErrNoSuchEntity) {
+		log.Printf("ignoring push for unknown user %s", payload.Addr)
+		return nil
+	}
+	return errors.Wrap(err, "queueing update")
+}
 
-	now := time.Now()
-
+func (s *Server) queueUpdate(ctx context.Context, email, date string) error {
 	var (
+		now  = time.Now()
 		u    user
 		when time.Time
 	)
-	err = aesite.UpdateUser(ctx, s.dsClient, payload.Addr, &u, func(*datastore.Transaction) error {
+	err := aesite.UpdateUser(ctx, s.dsClient, email, &u, func(*datastore.Transaction) error {
 		if u.NextUpdate.After(now) {
 			when = u.NextUpdate
 		} else {
@@ -98,16 +103,12 @@ func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) (err error
 		}
 		return nil
 	})
-	if stderrs.Is(err, datastore.ErrNoSuchEntity) {
-		log.Printf("ignoring push for unknown user %s", payload.Addr)
-		return nil
-	}
-	if err != nil && !stderrs.Is(err, aesite.ErrUpdateConflict) { // OK to ignore ErrUpdateConflict
-		return errors.Wrap(err, "getting user and updating next-update time")
+	if err != nil && !errors.Is(err, aesite.ErrUpdateConflict) { // OK to ignore ErrUpdateConflict
+		return errors.Wrapf(err, "getting user %s and updating next-update time", email)
 	}
 
 	if u.WatchExpiry.IsZero() {
-		log.Printf("ignoring push for disabled user %s", u.Email)
+		log.Printf("not queueing update for disabled user %s", email)
 		return nil
 	}
 
@@ -119,11 +120,11 @@ func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) (err error
 	_, err = s.ctClient.CreateTask(ctx, &tasks.CreateTaskRequest{
 		Parent: s.queueName(),
 		Task: &tasks.Task{
-			Name: s.taskName(u.Email, when),
+			Name: s.taskName(email, when),
 			MessageType: &tasks.Task_AppEngineHttpRequest{
 				AppEngineHttpRequest: &tasks.AppEngineHttpRequest{
 					HttpMethod:  tasks.HttpMethod_GET,
-					RelativeUri: s.taskURL(u.Email, msg.Date),
+					RelativeUri: s.taskURL(email, date),
 				},
 			},
 			ScheduleTime: &timestamp.Timestamp{
@@ -133,9 +134,9 @@ func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) (err error
 		},
 	})
 	if status.Code(err) == codes.AlreadyExists {
-		log.Printf("deduped update task for %s at %s", u.Email, when)
+		log.Printf("deduped update task for %s at %s", email, when)
 	} else if err != nil {
-		return errors.Wrapf(err, "enqueueing update task for %s at %s", u.Email, when)
+		return errors.Wrapf(err, "enqueueing update task for %s at %s", email, when)
 	}
 
 	return nil
@@ -176,7 +177,7 @@ func (s *Server) taskURL(email, date string) string {
 	return u.String()
 }
 
-func (s *Server) handleUpdate(w http.ResponseWriter, req *http.Request) (err error) {
+func (s *Server) handleUpdate(_ http.ResponseWriter, req *http.Request) (err error) {
 	defer func() {
 		if err != nil {
 			log.Printf("ERROR %s", err)
@@ -188,21 +189,25 @@ func (s *Server) handleUpdate(w http.ResponseWriter, req *http.Request) (err err
 		return err
 	}
 
-	var (
-		ctx   = req.Context()
-		date  = req.FormValue("date")
-		email = req.FormValue("email")
-		now   = time.Now()
-	)
+	return s.doUpdate(req.Context(), req.FormValue("email"), req.FormValue("date"))
+}
 
-	var u user
-	err = aesite.UpdateUser(ctx, s.dsClient, email, &u, func(*datastore.Transaction) error {
+func (s *Server) doUpdate(ctx context.Context, email, date string) error {
+	var (
+		now = time.Now()
+		u   user
+	)
+	err := aesite.UpdateUser(ctx, s.dsClient, email, &u, func(*datastore.Transaction) error {
 		nextUpdate := now.Add(time.Minute)
 		if nextUpdate.After(u.NextUpdate) {
 			u.NextUpdate = nextUpdate
 		}
+		u.LastUpdate = now
 		return nil
 	})
+	if err != nil {
+		return errors.Wrapf(err, "setting User.NextUpdate for %s", email)
+	}
 
 	oauthClient, err := s.oauthClient(ctx, &u) // xxx check for errNoToken
 	if err != nil {
@@ -295,11 +300,7 @@ func (s *Server) handleUpdate(w http.ResponseWriter, req *http.Request) (err err
 		}
 		return nil
 	})
-	if err != nil {
-		return errors.Wrap(err, "processing latest threads")
-	}
-
-	return nil
+	return errors.Wrap(err, "processing latest threads")
 }
 
 func handleThread(ctx context.Context, gmailSvc *gmail.Service, u *user, threadID string, starred, unstarred []*people.Person) error {

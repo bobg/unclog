@@ -1,4 +1,4 @@
 cron:
-- description: "watch renewer"
-  url: /t/renew
-  schedule: every 4 hours
+- description: "renew watches and queue catch-up updates"
+  url: /t/cron
+  schedule: every 1 hour

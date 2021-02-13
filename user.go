@@ -21,6 +21,7 @@ type user struct {
 	StarredLabelID  string
 
 	NextUpdate     time.Time
+	LastUpdate     time.Time
 	LastThreadTime time.Time
 	WatchExpiry    time.Time
 }
