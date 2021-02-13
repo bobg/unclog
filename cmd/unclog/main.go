@@ -2,53 +2,30 @@ package main
 
 import (
 	"context"
-	"flag"
 	"log"
 	"os"
-	"os/signal"
+
+	"github.com/bobg/subcmd"
 )
 
-var commands = map[string]func(context.Context, *flag.FlagSet, []string) error{
-	"admin": cliAdmin,
-	"serve": cliServe,
-}
-
 func main() {
-	ctx := context.Background()
-
-	flag.Parse()
-
-	flagset := flag.NewFlagSet("", flag.ContinueOnError)
-
-	if flag.NArg() == 0 {
-		log.Print("running server in default mode")
-		err := cliServe(ctx, flagset, nil)
-		if err != nil {
-			log.Fatal(err)
-		}
-		return
-	}
-
-	cmd := flag.Arg(0)
-	fn, ok := commands[cmd]
-	if !ok {
-		log.Fatalf("unknown command %s", cmd)
-	}
-
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, os.Interrupt)
-	go func() {
-		sig := <-sigCh
-		log.Printf("got signal %s", sig)
-		cancel()
-	}()
-
-	args := flag.Args()
-	err := fn(ctx, flagset, args[1:])
+	err := subcmd.Run(context.Background(), maincmd{}, os.Args[1:])
 	if err != nil {
 		log.Fatal(err)
 	}
+}
+
+type maincmd struct{}
+
+func (maincmd) Subcmds() map[string]subcmd.Subcmd {
+	return subcmd.Commands(
+		"admin", cliAdmin, nil,
+		"serve", cliServe, subcmd.Params(
+			"creds", subcmd.String, "", "credentials file",
+			"project", subcmd.String, "unclog", "project ID",
+			"location", subcmd.String, "us-west2", "location ID",
+			"dir", subcmd.String, "web/build", "content dir",
+			"test", subcmd.Bool, false, "run in test mode",
+		),
+	)
 }

@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
+	"log"
+	"os"
+	"os/signal"
 
 	cloudtasks "cloud.google.com/go/cloudtasks/apiv2"
 	"cloud.google.com/go/datastore"
@@ -14,36 +16,34 @@ import (
 	"github.com/bobg/unclog"
 )
 
-func cliServe(ctx context.Context, flagset *flag.FlagSet, args []string) error {
-	var (
-		creds      = flagset.String("creds", "", "credentials file")
-		projectID  = flagset.String("project", "unclog", "project ID")
-		locationID = flagset.String("location", "us-west2", "location ID")
-		contentDir = flagset.String("dir", "web/build", "content dir")
-		test       = flagset.Bool("test", false, "run in test mode")
-	)
+func cliServe(ctx context.Context, creds, projectID, locationID, contentDir string, test bool, args []string) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
-	err := flagset.Parse(args)
-	if err != nil {
-		return err
-	}
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt)
+	go func() {
+		sig := <-sigCh
+		log.Printf("got signal %s", sig)
+		cancel()
+	}()
 
-	if *test {
-		if *creds != "" {
+	if test {
+		if creds != "" {
 			return fmt.Errorf("cannot supply both -test and -creds")
 		}
 
-		err := aesite.DSTest(ctx, *projectID)
+		err := aesite.DSTest(ctx, projectID)
 		if err != nil {
 			return errors.Wrap(err, "starting test datastore service")
 		}
 	}
 
 	var options []option.ClientOption
-	if *creds != "" {
-		options = append(options, option.WithCredentialsFile(*creds))
+	if creds != "" {
+		options = append(options, option.WithCredentialsFile(creds))
 	}
-	dsClient, err := datastore.NewClient(ctx, *projectID, options...)
+	dsClient, err := datastore.NewClient(ctx, projectID, options...)
 	if err != nil {
 		return errors.Wrap(err, "creating datastore client")
 	}
@@ -52,7 +52,7 @@ func cliServe(ctx context.Context, flagset *flag.FlagSet, args []string) error {
 		return errors.Wrap(err, "creating cloudtasks client")
 	}
 
-	s := unclog.NewServer(dsClient, ctClient, *projectID, *locationID, *contentDir)
+	s := unclog.NewServer(dsClient, ctClient, projectID, locationID, contentDir)
 	err = s.Serve(ctx)
 
 	return errors.Wrap(err, "running server")

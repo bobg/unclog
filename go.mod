@@ -8,6 +8,7 @@ require (
 	github.com/bobg/aesite v1.4.2
 	github.com/bobg/basexx v0.0.0-20191130163404-b0c4bda224a5
 	github.com/bobg/mid v1.2.3
+	github.com/bobg/subcmd v0.0.0-20210213180814-0c84b241b4b3
 	github.com/golang/protobuf v1.4.3
 	github.com/pkg/errors v0.9.1
 	go.opencensus.io v0.22.6 // indirect
