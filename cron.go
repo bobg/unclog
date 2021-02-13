@@ -54,7 +54,7 @@ func (s *Server) handleCron(_ http.ResponseWriter, req *http.Request) error {
 			return errors.Wrap(err, "iterating over users for update")
 		}
 
-		err = s.queueUpdate(ctx, u.Email, "")
+		err = s.queueUpdate(ctx, u.Email, "", true)
 		if err != nil {
 			log.Printf("queueing catch-up update for %s: %s", u.Email, err)
 		} else {

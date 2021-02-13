@@ -48,17 +48,16 @@ func (s *Server) handleEnable(w http.ResponseWriter, req *http.Request) error {
 		return errors.Wrap(err, "checking CSRF token")
 	}
 
-	now := time.Now()
-
 	var u user
 	err = sess.GetUser(ctx, s.dsClient, &u)
 	if err != nil {
 		return errors.Wrap(err, "getting user record")
 	}
 
-	if u.WatchExpiry.After(now) {
-		// xxx already enabled
-	}
+	// now := time.Now()
+	// if u.WatchExpiry.After(now) {
+	// 	// xxx already enabled
+	// }
 
 	err = s.watch(ctx, &u)
 	if err != nil {
