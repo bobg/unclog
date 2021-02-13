@@ -314,7 +314,7 @@ func (s *Server) doUpdate(ctx context.Context, email, date string, isCatchup boo
 	}
 
 	if anyChanges && isCatchup {
-		err = s.watchHelper(ctx, &u, true)
+		err = s.watch(ctx, &u)
 		if err != nil {
 			return errors.Wrapf(err, "renewing gmail watch for %s", u.Email)
 		} else {
