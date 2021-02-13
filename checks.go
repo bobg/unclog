@@ -9,6 +9,7 @@ import (
 	"github.com/bobg/aesite"
 	"github.com/bobg/mid"
 	"github.com/pkg/errors"
+	"google.golang.org/api/idtoken"
 	"google.golang.org/appengine"
 )
 
@@ -17,6 +18,7 @@ var (
 	errWrongKey = errors.New("wrong key supplied")
 )
 
+// Read the master key from settings.
 func (s *Server) getMasterKey(ctx context.Context) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -31,6 +33,8 @@ func (s *Server) getMasterKey(ctx context.Context) (string, error) {
 	return s.masterKey, nil
 }
 
+// Check that a request has the right value for X-Unclog-Key.
+// This can be used to bypass other checks.
 func (s *Server) checkMasterKey(req *http.Request) error {
 	key := req.Header.Get("X-Unclog-Key")
 	if key == "" {
@@ -64,8 +68,14 @@ func (s *Server) checkCron(req *http.Request) error {
 	return nil
 }
 
-// See
-// https://cloud.google.com/tasks/docs/creating-appengine-handlers#reading_request_headers.
+// Check that the request comes from the Google task queue.
+// (See
+// https://cloud.google.com/tasks/docs/creating-appengine-handlers#reading_app_engine_task_request_headers.)
+//
+// This is a no-op outside of the App Engine context.
+//
+// It can be bypassed with the right X-Unclog-Key header field.
+// See checkMasterKey, above.
 func (s *Server) checkTaskQueue(req *http.Request) error {
 	if !appengine.IsAppEngine() {
 		return nil
@@ -84,4 +94,30 @@ func (s *Server) checkTaskQueue(req *http.Request) error {
 		}
 	}
 	return nil
+}
+
+// Check that the request contains a valid Authorization field.
+// This is expected to be present in the pubsub notification sent by the Gmail watcher.
+//
+// It can be bypassed with the right X-Unclog-Key header field.
+// See checkMasterKey, above.
+func (s *Server) checkAuthHeader(req *http.Request) error {
+	err := s.checkMasterKey(req)
+	if err == nil { // sic
+		return nil
+	}
+	authHeader := req.Header.Get("Authorization")
+	if authHeader == "" {
+		return errors.New("no Authorization field")
+	}
+	parts := strings.Split(authHeader, " ")
+	if len(parts) != 2 {
+		return fmt.Errorf("Authorization field has %d part(s), want 2", len(parts))
+	}
+	if !strings.EqualFold(parts[0], "Bearer") {
+		return fmt.Errorf("Authorization type is %s, want Bearer", parts[0])
+	}
+	tok := parts[1]
+	_, err = idtoken.Validate(req.Context(), tok, "")
+	return errors.Wrap(err, "validating Authorization token")
 }

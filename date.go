@@ -7,6 +7,7 @@ import (
 	"time"
 )
 
+// Date is a simple date object.
 type Date struct {
 	Y int
 	M time.Month
@@ -17,7 +18,7 @@ var dateRegex = regexp.MustCompile(`(\d+)-(\d+)-(\d+)`)
 
 var errDateParse = errors.New("bad dates")
 
-// Parses dates of the form "yyyy-mm-dd."
+// ParseDate parses dates of the form "yyyy-mm-dd."
 func ParseDate(s string) (Date, error) {
 	m := dateRegex.FindStringSubmatch(s)
 	if len(m) != 4 {

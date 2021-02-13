@@ -19,6 +19,7 @@ var scopes = []string{
 	gmail.GmailModifyScope,
 }
 
+// Caches the oauthConf setting and returns its value.
 func (s *Server) getOauthConf(ctx context.Context) (*oauth2.Config, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -39,6 +40,7 @@ func (s *Server) getOauthConf(ctx context.Context) (*oauth2.Config, error) {
 
 var errNoToken = errors.New("no token")
 
+// Produces an oauth-authenticated http client for the given user.
 func (s *Server) oauthClient(ctx context.Context, u *user) (*http.Client, error) {
 	if u.Token == "" {
 		return nil, errNoToken

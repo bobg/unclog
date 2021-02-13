@@ -10,11 +10,14 @@ import (
 	"google.golang.org/api/iterator"
 )
 
+// GET/POST /t/cron
 func (s *Server) handleCron(_ http.ResponseWriter, req *http.Request) error {
 	err := s.checkCron(req)
 	if err != nil {
 		return err
 	}
+
+	// Part 1: renew any gmail watches that are close to expiration.
 
 	var (
 		ctx       = req.Context()
@@ -41,6 +44,9 @@ func (s *Server) handleCron(_ http.ResponseWriter, req *http.Request) error {
 			log.Printf("renewed gmail watch for %s, new expiry %s", u.Email, u.WatchExpiry)
 		}
 	}
+
+	// Part 2: queue catch-up updates for addresses with no update in the past 24 hours.
+	// Maybe pubsub notifications stopped arriving, which is a thing that happens sometimes.
 
 	q = datastore.NewQuery("User").Filter("LastUpdate <", yesterday)
 	it = s.dsClient.Run(ctx, q)

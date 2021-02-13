@@ -14,6 +14,7 @@ import (
 	"google.golang.org/appengine"
 )
 
+// Server is the type of the Unclog server.
 type Server struct {
 	addr       string
 	dsClient   *datastore.Client
@@ -27,6 +28,7 @@ type Server struct {
 	masterKey string
 }
 
+// NewServer produces a new Server.
 func NewServer(dsClient *datastore.Client, ctClient *cloudtasks.Client, projectID, locationID, contentDir string) *Server {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -44,13 +46,14 @@ func NewServer(dsClient *datastore.Client, ctClient *cloudtasks.Client, projectI
 	}
 }
 
+// Serve serves http(s) requests.
 func (s *Server) Serve(ctx context.Context) error {
 	mux := http.NewServeMux()
 
 	// This is for testing. In production, / is routed by app.yaml.
 	mux.HandleFunc("/", s.handleStatic)
 
-	mux.Handle("/s/data", mid.Err(s.handleData))
+	mux.Handle("/s/data", mid.JSON(s.handleData))
 
 	// User-initiated.
 	mux.Handle("/s/auth", mid.Err(s.handleAuth))

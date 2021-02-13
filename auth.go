@@ -14,6 +14,7 @@ import (
 	"google.golang.org/api/option"
 )
 
+// GET /s/auth
 func (s *Server) handleAuth(w http.ResponseWriter, req *http.Request) error {
 	ctx := req.Context()
 
@@ -33,7 +34,9 @@ func (s *Server) handleAuth(w http.ResponseWriter, req *http.Request) error {
 	return nil
 }
 
-// This is where the OAuth flow redirects to.
+// GET/POST /auth2
+//
+// This is where the Google OAuth flow redirects to.
 func (s *Server) handleAuth2(w http.ResponseWriter, req *http.Request) error {
 	var (
 		ctx   = req.Context()
@@ -132,6 +135,7 @@ func (s *Server) handleAuth2(w http.ResponseWriter, req *http.Request) error {
 	return nil
 }
 
+// Create the ✔ and ✔/★ labels as needed.
 func (s *Server) maybeCreateLabel(ctx context.Context, gmailSvc *gmail.Service, name string) error {
 	label := &gmail.Label{
 		LabelListVisibility:   "labelShow",

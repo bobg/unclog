@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/mail"
 	"net/url"
-	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -23,7 +22,6 @@ import (
 	"github.com/pkg/errors"
 	"google.golang.org/api/gmail/v1"
 	"google.golang.org/api/googleapi"
-	"google.golang.org/api/idtoken"
 	"google.golang.org/api/option"
 	"google.golang.org/api/people/v1"
 	"google.golang.org/genproto/googleapis/cloud/tasks/v2"
@@ -31,6 +29,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// PushMessage is for parsing the message delivered by the gmail pubsub notification.
 type PushMessage struct {
 	Message struct {
 		Data string `json:"data"`
@@ -38,10 +37,12 @@ type PushMessage struct {
 	Date string `json:"date,omitempty"`
 }
 
+// PushPayload is for parsing the content of PushMessage.Message.Data after decoding.
 type PushPayload struct {
 	Addr string `json:"emailAddress"`
 }
 
+// POST /push
 func (s *Server) handlePush(_ http.ResponseWriter, req *http.Request) (err error) {
 	defer func() {
 		if err != nil {
@@ -89,6 +90,21 @@ func (s *Server) handlePush(_ http.ResponseWriter, req *http.Request) (err error
 	return errors.Wrap(err, "queueing update")
 }
 
+// Queue an update task for the user with address `email`.
+// Optional `date` (yyyy-mm-dd) says at what date to begin scanning mail; default is one week ago.
+//
+// If NextUpdate is set and in the future, the task is scheduled for then
+// (and possibly deduped with any other task scheduled for the same time).
+// Otherwise, the task is scheduled for now and NextUpdate is set to a minute from now.
+// This prevents multiple pushes arriving in the same minute from producing more than one task.
+//
+// If isCatchup is true, this is a "catch-up" update.
+// The cron job queues a catch-up update when there has been no other update for over a day
+// (which could mean that pubsub notifications have prematurely stopped,
+// which appears to be a thing that happens).
+//
+// TODO: NextUpdate doesn't actually mean that there's an update scheduled for then;
+// rename it to something like NoUpdatesBefore.
 func (s *Server) queueUpdate(ctx context.Context, email, date string, isCatchup bool) error {
 	var (
 		now  = time.Now()
@@ -179,6 +195,7 @@ func (s *Server) taskURL(email, date string, isCatchup bool) string {
 	return u.String()
 }
 
+// GET/POST /t/update
 func (s *Server) handleUpdate(_ http.ResponseWriter, req *http.Request) (err error) {
 	defer func() {
 		if err != nil {
@@ -196,6 +213,15 @@ func (s *Server) handleUpdate(_ http.ResponseWriter, req *http.Request) (err err
 	return s.doUpdate(req.Context(), req.FormValue("email"), req.FormValue("date"), isCatchup)
 }
 
+// Executes an update task.
+// This adds and removes labels for e-mail newer than `date` (default: one week ago)
+// for the user with address `email`.
+//
+// If `isCatchup` is true, and changes were needed,
+// this is a signal that pubsub notifications have prematurely stopped arriving.
+// In that case we try to renew the pubsub subscription.
+//
+// This function updates the NextUpdate and LastUpdate times for the user.
 func (s *Server) doUpdate(ctx context.Context, email, date string, isCatchup bool) error {
 	var (
 		now = time.Now()
@@ -210,13 +236,15 @@ func (s *Server) doUpdate(ctx context.Context, email, date string, isCatchup boo
 		return nil
 	})
 	if err != nil {
-		return errors.Wrapf(err, "setting User.NextUpdate for %s", email)
+		return errors.Wrapf(err, "setting NextUpdate and LastUpdate for %s", email)
 	}
 
 	oauthClient, err := s.oauthClient(ctx, &u) // xxx check for errNoToken
 	if err != nil {
 		return errors.Wrap(err, "getting oauth client")
 	}
+
+	// Part 1: get user's contacts.
 
 	var starred, unstarred []*people.Person
 
@@ -256,6 +284,8 @@ func (s *Server) doUpdate(ctx context.Context, email, date string, isCatchup boo
 		return errors.Wrap(err, "listing connections")
 	}
 
+	// Part 2: process messages in the right time range.
+
 	gmailSvc, err := gmail.NewService(ctx, option.WithHTTPClient(oauthClient))
 	if err != nil {
 		return errors.Wrap(err, "allocating gmail service")
@@ -286,25 +316,22 @@ func (s *Server) doUpdate(ctx context.Context, email, date string, isCatchup boo
 		query += fmt.Sprintf(" after:%d", startTime.Unix())
 	}
 
-	var anyChanges bool
+	var (
+		anyChanges       bool
+		latestThreadTime = u.LastThreadTime
+	)
 
 	err = gmailSvc.Users.Threads.List("me").Q(query).Pages(ctx, func(resp *gmail.ListThreadsResponse) error {
 		for _, thread := range resp.Threads {
-			uCopy := u
-
-			changed, err := handleThread(ctx, gmailSvc, &u, thread.Id, starred, unstarred)
+			threadTime, changed, err := handleThread(ctx, gmailSvc, thread.Id, u.StarredLabelID, u.ContactsLabelID, starred, unstarred)
 			if err != nil {
 				return errors.Wrapf(err, "handling thread %s", thread.Id)
 			}
 			if changed {
 				anyChanges = true
 			}
-
-			if !reflect.DeepEqual(u, uCopy) {
-				_, err = s.dsClient.Put(ctx, u.Key(), &u)
-				if err != nil {
-					return errors.Wrap(err, "storing last-thread time")
-				}
+			if threadTime.After(latestThreadTime) {
+				latestThreadTime = threadTime
 			}
 		}
 		return nil
@@ -313,28 +340,44 @@ func (s *Server) doUpdate(ctx context.Context, email, date string, isCatchup boo
 		return errors.Wrap(err, "processing latest threads")
 	}
 
+	if latestThreadTime.After(u.LastThreadTime) {
+		err = aesite.UpdateUser(ctx, s.dsClient, email, &u, func(*datastore.Transaction) error {
+			// Recheck the outer condition to prevent races.
+			if latestThreadTime.After(u.LastThreadTime) {
+				u.LastThreadTime = latestThreadTime
+			}
+			return nil
+		})
+		if err != nil && !errors.Is(err, aesite.ErrUpdateConflict) { // OK to ignore ErrUpdateConflict
+			return errors.Wrapf(err, "updating LastThreadTime for %s", email)
+		}
+	}
+
 	if anyChanges && isCatchup {
 		err = s.watch(ctx, &u)
 		if err != nil {
 			return errors.Wrapf(err, "renewing gmail watch for %s", u.Email)
-		} else {
-			log.Printf("renewed gmail watch in catchup update for %s", u.Email)
 		}
+		log.Printf("renewed gmail watch in catchup update for %s", u.Email)
 	}
 
 	return nil
 }
 
-func handleThread(ctx context.Context, gmailSvc *gmail.Service, u *user, threadID string, starred, unstarred []*people.Person) (bool, error) {
+// Add/remove labels on the messages in a given thread.
+// Returns the timestamp of the latest message in the thread
+// and a boolean telling whether any change was made.
+func handleThread(ctx context.Context, gmailSvc *gmail.Service, threadID string, starredLabelID, unstarredLabelID string, starred, unstarred []*people.Person) (time.Time, bool, error) {
+	var threadTime time.Time
+
 	thread, err := gmailSvc.Users.Threads.Get("me", threadID).Format("metadata").MetadataHeaders("from").Do()
 	if err != nil {
-		return false, errors.Wrap(err, "getting thread members")
+		return threadTime, false, errors.Wrap(err, "getting thread members")
 	}
 
 	var (
 		starredAddr, unstarredAddr   string
 		foundStarred, foundUnstarred bool
-		threadTime                   time.Time
 	)
 
 	for _, msg := range thread.Messages {
@@ -345,9 +388,9 @@ func handleThread(ctx context.Context, gmailSvc *gmail.Service, u *user, threadI
 		if !foundStarred || !foundUnstarred {
 			for _, labelID := range msg.LabelIds {
 				switch labelID {
-				case u.StarredLabelID:
+				case starredLabelID:
 					foundStarred = true
-				case u.ContactsLabelID:
+				case unstarredLabelID:
 					foundUnstarred = true
 				}
 			}
@@ -382,22 +425,22 @@ func handleThread(ctx context.Context, gmailSvc *gmail.Service, u *user, threadI
 	if starredAddr != "" {
 		if !foundStarred {
 			req = &gmail.ModifyThreadRequest{
-				AddLabelIds:    []string{u.StarredLabelID},
-				RemoveLabelIds: []string{u.ContactsLabelID},
+				AddLabelIds:    []string{starredLabelID},
+				RemoveLabelIds: []string{unstarredLabelID},
 			}
 		}
 	} else if unstarredAddr != "" {
 		if !foundUnstarred {
 			req = &gmail.ModifyThreadRequest{
-				AddLabelIds:    []string{u.ContactsLabelID},
-				RemoveLabelIds: []string{u.StarredLabelID},
+				AddLabelIds:    []string{unstarredLabelID},
+				RemoveLabelIds: []string{starredLabelID},
 			}
 		}
 	} else if foundStarred || foundUnstarred {
 		// Thread is labeled but should not be.
 		// (Maybe someone was removed from the user's contacts?)
 		req = &gmail.ModifyThreadRequest{
-			RemoveLabelIds: []string{u.StarredLabelID, u.ContactsLabelID},
+			RemoveLabelIds: []string{starredLabelID, unstarredLabelID},
 		}
 	}
 
@@ -405,16 +448,12 @@ func handleThread(ctx context.Context, gmailSvc *gmail.Service, u *user, threadI
 	if req != nil {
 		_, err = gmailSvc.Users.Threads.Modify("me", threadID, req).Do()
 		if err != nil && !googleapi.IsNotModified(err) {
-			return false, errors.Wrap(err, "updating thread")
+			return threadTime, false, errors.Wrap(err, "updating thread")
 		}
 		change = true
 	}
 
-	if threadTime.After(u.LastThreadTime) {
-		u.LastThreadTime = threadTime
-	}
-
-	return change, nil
+	return threadTime, change, nil
 }
 
 func addrIn(addr string, persons []*people.Person) bool {
@@ -426,25 +465,4 @@ func addrIn(addr string, persons []*people.Person) bool {
 		}
 	}
 	return false
-}
-
-func (s *Server) checkAuthHeader(req *http.Request) error {
-	err := s.checkMasterKey(req)
-	if err == nil { // sic
-		return nil
-	}
-	authHeader := req.Header.Get("Authorization")
-	if authHeader == "" {
-		return errors.New("no Authorization field")
-	}
-	parts := strings.Split(authHeader, " ")
-	if len(parts) != 2 {
-		return fmt.Errorf("Authorization field has %d part(s), want 2", len(parts))
-	}
-	if !strings.EqualFold(parts[0], "Bearer") {
-		return fmt.Errorf("Authorization type is %s, want Bearer", parts[0])
-	}
-	tok := parts[1]
-	_, err = idtoken.Validate(req.Context(), tok, "")
-	return errors.Wrap(err, "validating Authorization token")
 }
