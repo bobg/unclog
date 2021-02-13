@@ -3,7 +3,6 @@ package unclog
 import (
 	"context"
 	"encoding/json"
-	stderrs "errors"
 	"net/http"
 
 	"cloud.google.com/go/datastore"
@@ -77,7 +76,7 @@ func (s *Server) handleAuth2(w http.ResponseWriter, req *http.Request) error {
 	)
 
 	err = aesite.LookupUser(ctx, s.dsClient, addr, &u)
-	if stderrs.Is(err, datastore.ErrNoSuchEntity) {
+	if errors.Is(err, datastore.ErrNoSuchEntity) {
 		u.InboxOnly = true // Force true for now. Later, add a UI for toggling this.
 		err = aesite.NewUser(ctx, s.dsClient, addr, "", &u)
 		if err != nil {

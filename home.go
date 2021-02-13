@@ -2,7 +2,6 @@ package unclog
 
 import (
 	"encoding/json"
-	stderrs "errors"
 	"log"
 	"net/http"
 	"time"
@@ -42,7 +41,7 @@ func (s *Server) handleData(w http.ResponseWriter, req *http.Request) error {
 	} else {
 		var u user
 		err = sess.GetUser(ctx, s.dsClient, &u)
-		if stderrs.Is(err, aesite.ErrAnonymous) {
+		if errors.Is(err, aesite.ErrAnonymous) {
 			// ok
 		} else if err != nil {
 			return errors.Wrap(err, "getting session user")

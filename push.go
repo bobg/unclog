@@ -5,13 +5,13 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
-	stderrs "errors"
 	"fmt"
 	"log"
 	"net/http"
 	"net/mail"
 	"net/url"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
@@ -42,7 +42,7 @@ type PushPayload struct {
 	Addr string `json:"emailAddress"`
 }
 
-func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) (err error) {
+func (s *Server) handlePush(_ http.ResponseWriter, req *http.Request) (err error) {
 	defer func() {
 		if err != nil {
 			log.Printf("ERROR %s", err)
@@ -81,15 +81,21 @@ func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) (err error
 
 	log.Printf("got push for %s", payload.Addr)
 
-	ctx := req.Context()
+	err = s.queueUpdate(req.Context(), payload.Addr, msg.Date, false)
+	if errors.Is(err, datastore.ErrNoSuchEntity) {
+		log.Printf("ignoring push for unknown user %s", payload.Addr)
+		return nil
+	}
+	return errors.Wrap(err, "queueing update")
+}
 
-	now := time.Now()
-
+func (s *Server) queueUpdate(ctx context.Context, email, date string, isCatchup bool) error {
 	var (
+		now  = time.Now()
 		u    user
 		when time.Time
 	)
-	err = aesite.UpdateUser(ctx, s.dsClient, payload.Addr, &u, func(*datastore.Transaction) error {
+	err := aesite.UpdateUser(ctx, s.dsClient, email, &u, func(*datastore.Transaction) error {
 		if u.NextUpdate.After(now) {
 			when = u.NextUpdate
 		} else {
@@ -98,16 +104,12 @@ func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) (err error
 		}
 		return nil
 	})
-	if stderrs.Is(err, datastore.ErrNoSuchEntity) {
-		log.Printf("ignoring push for unknown user %s", payload.Addr)
-		return nil
-	}
-	if err != nil && !stderrs.Is(err, aesite.ErrUpdateConflict) { // OK to ignore ErrUpdateConflict
-		return errors.Wrap(err, "getting user and updating next-update time")
+	if err != nil && !errors.Is(err, aesite.ErrUpdateConflict) { // OK to ignore ErrUpdateConflict
+		return errors.Wrapf(err, "getting user %s and updating next-update time", email)
 	}
 
 	if u.WatchExpiry.IsZero() {
-		log.Printf("ignoring push for disabled user %s", u.Email)
+		log.Printf("not queueing update for disabled user %s", email)
 		return nil
 	}
 
@@ -119,11 +121,11 @@ func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) (err error
 	_, err = s.ctClient.CreateTask(ctx, &tasks.CreateTaskRequest{
 		Parent: s.queueName(),
 		Task: &tasks.Task{
-			Name: s.taskName(u.Email, when),
+			Name: s.taskName(email, when),
 			MessageType: &tasks.Task_AppEngineHttpRequest{
 				AppEngineHttpRequest: &tasks.AppEngineHttpRequest{
 					HttpMethod:  tasks.HttpMethod_GET,
-					RelativeUri: s.taskURL(u.Email, msg.Date),
+					RelativeUri: s.taskURL(email, date, isCatchup),
 				},
 			},
 			ScheduleTime: &timestamp.Timestamp{
@@ -133,12 +135,10 @@ func (s *Server) handlePush(w http.ResponseWriter, req *http.Request) (err error
 		},
 	})
 	if status.Code(err) == codes.AlreadyExists {
-		log.Printf("deduped update task for %s at %s", u.Email, when)
-	} else if err != nil {
-		return errors.Wrapf(err, "enqueueing update task for %s at %s", u.Email, when)
+		log.Printf("deduped update task for %s at %s", email, when)
+		return nil
 	}
-
-	return nil
+	return errors.Wrapf(err, "enqueueing update task for %s at %s", email, when)
 }
 
 func (s *Server) taskName(email string, when time.Time) string {
@@ -163,7 +163,7 @@ func (s *Server) queueName() string {
 	return fmt.Sprintf("projects/%s/locations/%s/queues/%s", s.projectID, s.locationID, queueName)
 }
 
-func (s *Server) taskURL(email, date string) string {
+func (s *Server) taskURL(email, date string, isCatchup bool) string {
 	u, _ := url.Parse("/t/update")
 
 	v := url.Values{}
@@ -171,12 +171,15 @@ func (s *Server) taskURL(email, date string) string {
 	if date != "" {
 		v.Set("date", date)
 	}
+	if isCatchup {
+		v.Set("catchup", "true")
+	}
 	u.RawQuery = v.Encode()
 
 	return u.String()
 }
 
-func (s *Server) handleUpdate(w http.ResponseWriter, req *http.Request) (err error) {
+func (s *Server) handleUpdate(_ http.ResponseWriter, req *http.Request) (err error) {
 	defer func() {
 		if err != nil {
 			log.Printf("ERROR %s", err)
@@ -188,21 +191,27 @@ func (s *Server) handleUpdate(w http.ResponseWriter, req *http.Request) (err err
 		return err
 	}
 
-	var (
-		ctx   = req.Context()
-		date  = req.FormValue("date")
-		email = req.FormValue("email")
-		now   = time.Now()
-	)
+	isCatchup, _ := strconv.ParseBool(req.FormValue("catchup"))
 
-	var u user
-	err = aesite.UpdateUser(ctx, s.dsClient, email, &u, func(*datastore.Transaction) error {
+	return s.doUpdate(req.Context(), req.FormValue("email"), req.FormValue("date"), isCatchup)
+}
+
+func (s *Server) doUpdate(ctx context.Context, email, date string, isCatchup bool) error {
+	var (
+		now = time.Now()
+		u   user
+	)
+	err := aesite.UpdateUser(ctx, s.dsClient, email, &u, func(*datastore.Transaction) error {
 		nextUpdate := now.Add(time.Minute)
 		if nextUpdate.After(u.NextUpdate) {
 			u.NextUpdate = nextUpdate
 		}
+		u.LastUpdate = now
 		return nil
 	})
+	if err != nil {
+		return errors.Wrapf(err, "setting User.NextUpdate for %s", email)
+	}
 
 	oauthClient, err := s.oauthClient(ctx, &u) // xxx check for errNoToken
 	if err != nil {
@@ -277,13 +286,18 @@ func (s *Server) handleUpdate(w http.ResponseWriter, req *http.Request) (err err
 		query += fmt.Sprintf(" after:%d", startTime.Unix())
 	}
 
+	var anyChanges bool
+
 	err = gmailSvc.Users.Threads.List("me").Q(query).Pages(ctx, func(resp *gmail.ListThreadsResponse) error {
 		for _, thread := range resp.Threads {
 			uCopy := u
 
-			err := handleThread(ctx, gmailSvc, &u, thread.Id, starred, unstarred)
+			changed, err := handleThread(ctx, gmailSvc, &u, thread.Id, starred, unstarred)
 			if err != nil {
 				return errors.Wrapf(err, "handling thread %s", thread.Id)
+			}
+			if changed {
+				anyChanges = true
 			}
 
 			if !reflect.DeepEqual(u, uCopy) {
@@ -299,13 +313,22 @@ func (s *Server) handleUpdate(w http.ResponseWriter, req *http.Request) (err err
 		return errors.Wrap(err, "processing latest threads")
 	}
 
+	if anyChanges && isCatchup {
+		err = s.watch(ctx, &u)
+		if err != nil {
+			return errors.Wrapf(err, "renewing gmail watch for %s", u.Email)
+		} else {
+			log.Printf("renewed gmail watch in catchup update for %s", u.Email)
+		}
+	}
+
 	return nil
 }
 
-func handleThread(ctx context.Context, gmailSvc *gmail.Service, u *user, threadID string, starred, unstarred []*people.Person) error {
+func handleThread(ctx context.Context, gmailSvc *gmail.Service, u *user, threadID string, starred, unstarred []*people.Person) (bool, error) {
 	thread, err := gmailSvc.Users.Threads.Get("me", threadID).Format("metadata").MetadataHeaders("from").Do()
 	if err != nil {
-		return errors.Wrap(err, "getting thread members")
+		return false, errors.Wrap(err, "getting thread members")
 	}
 
 	var (
@@ -377,18 +400,21 @@ func handleThread(ctx context.Context, gmailSvc *gmail.Service, u *user, threadI
 			RemoveLabelIds: []string{u.StarredLabelID, u.ContactsLabelID},
 		}
 	}
+
+	var change bool
 	if req != nil {
 		_, err = gmailSvc.Users.Threads.Modify("me", threadID, req).Do()
 		if err != nil && !googleapi.IsNotModified(err) {
-			return errors.Wrap(err, "updating thread")
+			return false, errors.Wrap(err, "updating thread")
 		}
+		change = true
 	}
 
 	if threadTime.After(u.LastThreadTime) {
 		u.LastThreadTime = threadTime
 	}
 
-	return nil
+	return change, nil
 }
 
 func addrIn(addr string, persons []*people.Person) bool {
