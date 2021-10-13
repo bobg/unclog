@@ -16,7 +16,7 @@ import (
 	"github.com/bobg/unclog"
 )
 
-func cliServe(ctx context.Context, creds, projectID, locationID, contentDir string, test bool, args []string) error {
+func cliServe(ctx context.Context, creds, projectID, locationID, contentDir string, test bool, _ []string) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 

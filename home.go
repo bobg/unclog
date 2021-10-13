@@ -36,8 +36,13 @@ func (s *Server) handleData(ctx context.Context) (*homedata, error) {
 	return s.existingSession(ctx, sess)
 }
 
+const (
+	dayDur     = 24 * time.Hour
+	sessionDur = 365 * dayDur
+)
+
 func (s *Server) newSession(ctx context.Context) (*homedata, error) {
-	sess, err := aesite.NewSession(ctx, s.dsClient, nil)
+	sess, err := aesite.NewSessionWithDuration(ctx, s.dsClient, nil, sessionDur)
 	if err != nil {
 		return nil, errors.Wrap(err, "creating new session")
 	}

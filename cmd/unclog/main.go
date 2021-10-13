@@ -5,7 +5,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/bobg/subcmd"
+	"github.com/bobg/subcmd/v2"
 )
 
 func main() {
@@ -17,15 +17,15 @@ func main() {
 
 type maincmd struct{}
 
-func (maincmd) Subcmds() map[string]subcmd.Subcmd {
+func (maincmd) Subcmds() subcmd.Map {
 	return subcmd.Commands(
-		"admin", cliAdmin, nil,
-		"serve", cliServe, subcmd.Params(
-			"creds", subcmd.String, "", "credentials file",
-			"project", subcmd.String, "unclog", "project ID",
-			"location", subcmd.String, "us-west2", "location ID",
-			"dir", subcmd.String, "web/build", "content dir",
-			"test", subcmd.Bool, false, "run in test mode",
+		"admin", cliAdmin, "perform admin tasks", nil,
+		"serve", cliServe, "run a server", subcmd.Params(
+			"-creds", subcmd.String, "", "credentials file",
+			"-project", subcmd.String, "unclog", "project ID",
+			"-location", subcmd.String, "us-west2", "location ID",
+			"-dir", subcmd.String, "web/build", "content dir",
+			"-test", subcmd.Bool, false, "run in test mode",
 		),
 	)
 }

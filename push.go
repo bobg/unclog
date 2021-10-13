@@ -317,7 +317,7 @@ func (s *Server) doUpdate(ctx context.Context, email, date string, isCatchup boo
 	}
 
 	var (
-		anyChanges       bool
+		nchanges         int
 		latestThreadTime = u.LastThreadTime
 	)
 
@@ -328,7 +328,7 @@ func (s *Server) doUpdate(ctx context.Context, email, date string, isCatchup boo
 				return errors.Wrapf(err, "handling thread %s", thread.Id)
 			}
 			if changed {
-				anyChanges = true
+				nchanges++
 			}
 			if threadTime.After(latestThreadTime) {
 				latestThreadTime = threadTime
@@ -353,12 +353,15 @@ func (s *Server) doUpdate(ctx context.Context, email, date string, isCatchup boo
 		}
 	}
 
-	if anyChanges && isCatchup {
-		err = s.watch(ctx, &u)
-		if err != nil {
-			return errors.Wrapf(err, "renewing gmail watch for %s", u.Email)
+	if nchanges > 0 {
+		log.Printf("marked/unmarked %d thread(s)", nchanges)
+		if isCatchup {
+			err = s.watch(ctx, &u)
+			if err != nil {
+				return errors.Wrapf(err, "renewing gmail watch for %s", u.Email)
+			}
+			log.Printf("renewed gmail watch in catchup update for %s", u.Email)
 		}
-		log.Printf("renewed gmail watch in catchup update for %s", u.Email)
 	}
 
 	return nil
