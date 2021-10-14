@@ -12,62 +12,39 @@ import (
 	"github.com/bobg/aesite"
 	"github.com/bobg/subcmd/v2"
 	"github.com/pkg/errors"
-	"google.golang.org/api/option"
 
 	"github.com/bobg/unclog"
 )
 
-func cliAdmin(ctx context.Context, args []string) error {
-	return subcmd.Run(ctx, admincmd{}, args)
+func (c maincmd) cliAdmin(ctx context.Context, args []string) error {
+	return subcmd.Run(ctx, admincmd{maincmd: c}, args)
 }
 
-type admincmd struct{}
+type admincmd struct {
+	maincmd
+}
 
-func (admincmd) Subcmds() subcmd.Map {
+func (c admincmd) Subcmds() subcmd.Map {
 	return subcmd.Commands(
-		"get", cliAdminGet, "get a parameter value", subcmd.Params(
-			"-creds", subcmd.String, "", "credentials file",
-			"-project", subcmd.String, "unclog", "project ID",
-			"-test", subcmd.Bool, false, "run in test mode",
+		"get", c.cliAdminGet, "get a parameter value", subcmd.Params(
 			"param", subcmd.String, "", "parameter name to get",
 		),
-		"set", cliAdminSet, "set a parameter value", subcmd.Params(
-			"-creds", subcmd.String, "", "credentials file",
-			"-project", subcmd.String, "unclog", "project ID",
-			"-test", subcmd.Bool, false, "run in test mode",
+		"set", c.cliAdminSet, "set a parameter value", subcmd.Params(
 			"param", subcmd.String, "", "parameter name to set",
 			"val", subcmd.String, "", "parameter value",
 		),
-		"kick", cliAdminKick, "kick the service", subcmd.Params(
+		"kick", c.cliAdminKick, "kick the service", subcmd.Params(
 			"-date", subcmd.String, "", "process threads with this date (YYYY-MM-DD, default one week ago)",
 			"addr", subcmd.String, "", "Gmail address",
 		),
-		"session", cliAdminSession, "show the details of a session", subcmd.Params(
-			"-creds", subcmd.String, "", "credentials file",
-			"-project", subcmd.String, "unclog", "project ID",
-			"-test", subcmd.Bool, false, "run in test mode",
+		"session", c.cliAdminSession, "show the details of a session", subcmd.Params(
 			"cookie", subcmd.String, "", "session cookie",
 		),
 	)
 }
 
-func cliAdminGet(ctx context.Context, creds, projectID string, test bool, param string, _ []string) error {
-	if test {
-		if creds != "" {
-			return fmt.Errorf("cannot supply both -test and -creds")
-		}
-
-		err := aesite.DSTest(ctx, projectID)
-		if err != nil {
-			return err
-		}
-	}
-
-	var options []option.ClientOption
-	if creds != "" {
-		options = append(options, option.WithCredentialsFile(creds))
-	}
-	dsClient, err := datastore.NewClient(ctx, projectID, options...)
+func (c admincmd) cliAdminGet(ctx context.Context, param string, _ []string) error {
+	dsClient, err := c.dsClient(ctx)
 	if err != nil {
 		return errors.Wrap(err, "creating datastore client")
 	}
@@ -81,23 +58,8 @@ func cliAdminGet(ctx context.Context, creds, projectID string, test bool, param 
 	return nil
 }
 
-func cliAdminSet(ctx context.Context, creds, projectID string, test bool, param, val string, _ []string) error {
-	if test {
-		if creds != "" {
-			return fmt.Errorf("cannot supply both -test and -creds")
-		}
-
-		err := aesite.DSTest(ctx, projectID)
-		if err != nil {
-			return err
-		}
-	}
-
-	var options []option.ClientOption
-	if creds != "" {
-		options = append(options, option.WithCredentialsFile(creds))
-	}
-	dsClient, err := datastore.NewClient(ctx, projectID, options...)
+func (c admincmd) cliAdminSet(ctx context.Context, param, val string, _ []string) error {
+	dsClient, err := c.dsClient(ctx)
 	if err != nil {
 		return errors.Wrap(err, "creating datastore client")
 	}
@@ -105,7 +67,17 @@ func cliAdminSet(ctx context.Context, creds, projectID string, test bool, param,
 	return aesite.SetSetting(ctx, dsClient, param, []byte(val))
 }
 
-func cliAdminKick(ctx context.Context, date, addr string, _ []string) error {
+func (c admincmd) cliAdminKick(ctx context.Context, date, addr string, _ []string) error {
+	dsClient, err := c.dsClient(ctx)
+	if err != nil {
+		return errors.Wrap(err, "creating datastore client")
+	}
+
+	masterKey, err := aesite.GetSetting(ctx, dsClient, "master-key")
+	if err != nil {
+		return errors.Wrap(err, "getting master key")
+	}
+
 	payload := unclog.PushPayload{Addr: addr}
 	jsonPayload, err := json.Marshal(payload)
 	if err != nil {
@@ -121,32 +93,24 @@ func cliAdminKick(ctx context.Context, date, addr string, _ []string) error {
 		return errors.Wrap(err, "JSON-marshaling message")
 	}
 
-	resp, err := http.Post("https://unclog.appspot.com/push", "application/json", bytes.NewReader(jsonMsg))
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://unclog.appspot.com/push", bytes.NewReader(jsonMsg))
+	if err != nil {
+		return errors.Wrap(err, "creating POST request")
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Unclog-Key", string(masterKey))
+
+	var httpClient http.Client
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return errors.Wrap(err, "posting to /push URL")
 	}
-	resp.Body.Close()
-
-	return nil
+	return resp.Body.Close()
 }
 
-func cliAdminSession(ctx context.Context, creds, projectID string, test bool, cookie string, _ []string) error {
-	if test {
-		if creds != "" {
-			return fmt.Errorf("cannot supply both -test and -creds")
-		}
-
-		err := aesite.DSTest(ctx, projectID)
-		if err != nil {
-			return err
-		}
-	}
-
-	var options []option.ClientOption
-	if creds != "" {
-		options = append(options, option.WithCredentialsFile(creds))
-	}
-	dsClient, err := datastore.NewClient(ctx, projectID, options...)
+func (c admincmd) cliAdminSession(ctx context.Context, cookie string, _ []string) error {
+	dsClient, err := c.dsClient(ctx)
 	if err != nil {
 		return errors.Wrap(err, "creating datastore client")
 	}
