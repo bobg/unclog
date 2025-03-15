@@ -8,5 +8,5 @@ check:
 	(cd web; npx tsc --noEmit)
 
 deploy:
-	(cd web; yarn build)
+	(cd web; npm run build)
 	gcloud app deploy --project unclog app.yaml cron.yaml
