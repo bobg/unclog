@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"cloud.google.com/go/cloudtasks/apiv2/cloudtaskspb"
 	"cloud.google.com/go/datastore"
 	"github.com/bobg/aesite"
 	"github.com/bobg/basexx"
@@ -24,7 +25,6 @@ import (
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 	"google.golang.org/api/people/v1"
-	"google.golang.org/genproto/googleapis/cloud/tasks/v2"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -134,13 +134,13 @@ func (s *Server) queueUpdate(ctx context.Context, email, date string, isCatchup 
 		nanos = int32(when.UnixNano() % int64(time.Second))
 	)
 
-	_, err = s.ctClient.CreateTask(ctx, &tasks.CreateTaskRequest{
+	_, err = s.ctClient.CreateTask(ctx, &cloudtaskspb.CreateTaskRequest{
 		Parent: s.queueName(),
-		Task: &tasks.Task{
+		Task: &cloudtaskspb.Task{
 			Name: s.taskName(email, when),
-			MessageType: &tasks.Task_AppEngineHttpRequest{
-				AppEngineHttpRequest: &tasks.AppEngineHttpRequest{
-					HttpMethod:  tasks.HttpMethod_GET,
+			MessageType: &cloudtaskspb.Task_AppEngineHttpRequest{
+				AppEngineHttpRequest: &cloudtaskspb.AppEngineHttpRequest{
+					HttpMethod:  cloudtaskspb.HttpMethod_GET,
 					RelativeUri: s.taskURL(email, date, isCatchup),
 				},
 			},
